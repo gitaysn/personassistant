@@ -121,14 +121,17 @@
             <div class="card">
                 <div class="ranking">#{{ $index + 1 }}</div>
 
-                @if (!empty($alt['gambar']) && file_exists(public_path($alt['gambar'])))
+                @if (!empty($alt['gambar']))
                     <img src="{{ asset($alt['gambar']) }}" alt="{{ $alt['nama_alternatif'] ?? 'Pakaian' }}">
                 @else
                     <div class="nama-alternatif">{{ $alt['nama_alternatif'] ?? 'Pakaian' }}</div>
                 @endif
 
                 <div class="nama-alternatif">{{ $alt['nama'] }}</div>
-                <div class="skor">Skor: {{ number_format($alt['skor_saw'], 3) }}</div>
+                <div class="skor">
+                    Skor Total: 
+                    {{ number_format($alt['skor_total'] ?? ($alt['skor_saw'] ?? 0), 3) }}
+                </div>
 
             </div>
         @empty

@@ -58,71 +58,99 @@ class HomeController extends Controller
     }
 
     private function getSkorAkhirByJenis($jenis, $preferensi = [], $withPreferensiBonus = false)
-    {
-        $mapping = [
-            'jenis_acara' => 'Jenis Acara',
-            'harga' => 'Harga',
-            'jenis_pakaian' => 'Jenis Pakaian',
-            'warna' => 'Warna Pakaian',
-            'lokasi' => 'Lokasi Acara',
-            'cuaca' => 'Cuaca Acara',
-        ];
+{
+    $mapping = [
+        'jenis_acara' => 'Jenis Acara',
+        'harga' => 'Harga',
+        'jenis_pakaian' => 'Jenis Pakaian',
+        'warna' => 'Warna Pakaian',
+        'lokasi' => 'Lokasi Acara',
+        'cuaca' => 'Cuaca Acara',
+    ];
 
-        $baseAlternatif = DataAlternatif::with(['penilaian.subkriteria.kriteria'])
-            ->whereHas('penilaian.subkriteria.kriteria', fn($q) => $q->where('nama_kriteria', 'Jenis Pakaian'))
-            ->whereHas('penilaian.subkriteria', fn($q) => $q->where('nama_subkriteria', $jenis))
-            ->get();
+    \Log::info('Preferensi diterima: ', $preferensi);
 
-        if ($baseAlternatif->isEmpty()) return [];
+    $baseAlternatif = DataAlternatif::with(['penilaian.subkriteria.kriteria'])
+        ->whereHas('penilaian.subkriteria.kriteria', fn($q) => $q->where('nama_kriteria', 'Jenis Pakaian'))
+        ->whereHas('penilaian.subkriteria', fn($q) => $q->where('nama_subkriteria', $jenis))
+        ->get();
 
-        $kriteria = Kriteria::with('subkriteria')->get();
+    if ($baseAlternatif->isEmpty()) return [];
 
-        // Ambil preferensi user sebagai angka
-        $userPrefNilai = [];
-        foreach ($preferensi as $key => $val) {
-            $namaKriteria = $mapping[$key] ?? null;
-            if (!$namaKriteria) continue;
+    $kriteria = Kriteria::with('subkriteria')->get();
 
-            $krit = $kriteria->firstWhere('nama_kriteria', $namaKriteria);
-            if ($krit) {
-                $sub = Subkriteria::where('nama_subkriteria', $val)
-                    ->where('kriteria_id', $krit->id)->first();
+    // Ambil nilai preferensi user sebagai bobot pembanding
+    $userPreferensi = [];
+    foreach ($preferensi as $key => $val) {
+        $namaKriteria = $mapping[$key] ?? null;
+        if ($namaKriteria) {
+            $kriteriaModel = $kriteria->firstWhere('nama_kriteria', $namaKriteria);
+            if ($kriteriaModel) {
+                $sub = $kriteriaModel->subkriteria->firstWhere('nama_subkriteria', $val);
                 if ($sub) {
-                    $userPrefNilai[$krit->id] = $sub->nilai;
+                    $userPreferensi[$kriteriaModel->id] = $sub->nilai;
                 }
             }
         }
+    }
 
-        // Hitung skor SAW berdasarkan selisih preferensi
-        $hasil = $baseAlternatif->map(function ($alt) use ($kriteria, $userPrefNilai) {
-            $totalSkor = 0;
-            foreach ($kriteria as $k) {
-                $pen = $alt->penilaian->firstWhere('kriteria_id', $k->id);
-                $nilaiAlt = $pen->subkriteria->nilai ?? 0;
-                $nilaiUser = $userPrefNilai[$k->id] ?? $nilaiAlt;
+    // Hitung nilai max dan min
+    $maxNilai = [];
+    $minNilai = [];
+    foreach ($kriteria as $i => $k) {
+        $nilai = $baseAlternatif->map(fn($alt) =>
+            $alt->penilaian->firstWhere('kriteria_id', $k->id)?->subkriteria->nilai
+        )->filter();
+        $maxNilai[$k->id] = $nilai->max() ?? 1;
+        $minNilai[$k->id] = $nilai->min() ?? 1;
+    }
 
-                if (strtolower($k->jenis) === 'cost') {
-                    $normalAlt = $nilaiAlt > 0 ? 1 / $nilaiAlt : 0;
-                    $normalUser = $nilaiUser > 0 ? 1 / $nilaiUser : 0;
-                } else {
-                    $normalAlt = $nilaiAlt;
-                    $normalUser = $nilaiUser;
-                }
+    // Hitung skor berdasarkan selisih preferensi user vs alternatif
+    $hasilSAW = $baseAlternatif->map(function ($alt) use ($kriteria, $maxNilai, $minNilai, $userPreferensi) {
+        $totalSkor = 0;
+        $detail = [];
 
-                $selisih = abs($normalAlt - $normalUser);
-                $totalSkor += (1 - $selisih) * $k->bobot; // semakin dekat preferensi, semakin tinggi skor
+        foreach ($kriteria as $k) {
+            $pn = $alt->penilaian->firstWhere('kriteria_id', $k->id);
+            $nilaiAlt = $pn->subkriteria->nilai ?? 0;
+            $nilaiUser = $userPreferensi[$k->id] ?? 0;
+
+            if (strtolower($k->jenis) === 'cost') {
+                $normalAlt = $nilaiAlt > 0 ? $minNilai[$k->id] / $nilaiAlt : 0;
+                $normalUser = $nilaiUser > 0 ? $minNilai[$k->id] / $nilaiUser : 0;
+            } else {
+                $normalAlt = $maxNilai[$k->id] > 0 ? $nilaiAlt / $maxNilai[$k->id] : 0;
+                $normalUser = $maxNilai[$k->id] > 0 ? $nilaiUser / $maxNilai[$k->id] : 0;
             }
 
-            return [
-                'id' => $alt->id,
-                'nama' => $alt->nama_alternatif,
-                'gambar' => $alt->gambar,
-                'skor_saw' => round($totalSkor, 4)
-            ];
-        });
+            $selisih = abs($normalAlt - $normalUser);
+            $bobot = round((1 - $selisih) * $k->bobot, 4); // semakin kecil selisih, semakin besar skor
 
-        return $hasil->sortByDesc('skor_saw')->values()->all();
-    }
+            $totalSkor += $bobot;
+
+            $detail[] = [
+                'kriteria' => $k->nama_kriteria,
+                'alt_val' => $nilaiAlt,
+                'user_val' => $nilaiUser,
+                'selisih' => $selisih,
+                'bobot_kriteria' => $k->bobot,
+                'skor_kriteria' => $bobot,
+            ];
+        }
+
+        return [
+            'id' => $alt->id,
+            'nama' => $alt->nama_alternatif,
+            'gambar' => $alt->gambar,
+            'skor_total' => round($totalSkor, 4),
+            'skor_saw' => round($totalSkor, 4), // supaya blade tidak error
+            'detail_normalisasi' => $detail
+        ];
+    });
+
+    return $hasilSAW->sortByDesc('skor_total')->values()->all();
+}
+
 
     public function prosesRekomendasi(Request $request)
     {
