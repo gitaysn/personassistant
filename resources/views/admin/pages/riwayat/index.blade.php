@@ -30,7 +30,7 @@
                     @foreach ($riwayat as $index => $item)
                         <tr>
                             <td class="text-center">{{ $index + 1 }}</td>
-                            <td class="text-center">{{ $item->created_at->format('d M Y H:i') }}</td>
+                            <td class="text-center">{{ $item->created_at->setTimezone('Asia/Jakarta')->format('d M Y H:i') }}</td>
                             <td class="text-center">
                                 <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modalRiwayat{{ $item->id }}">
                                     <i class="bi bi-folder2-open"></i>
