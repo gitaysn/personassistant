@@ -36,16 +36,14 @@
                                     <i class="bi bi-folder2-open"></i>
                                 </button>
 
-                                <!-- Tombol Hapus pakai SweetAlert -->
-                                <button class="btn btn-sm btn-danger" onclick="hapusData({{ $item->id }})">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-
-                                <!-- Form Hapus Tersembunyi -->
-                                <form id="form-hapus-{{ $item->id }}" action="{{ route('admin.riwayat.destroy', $item->id) }}" method="POST" style="display: none;">
+                                <form id="delete-form-{{ $item->id }}" action="{{ route('admin.riwayat.destroy', $item->id) }}" method="POST" class="d-inline">
                                     @csrf
                                     @method('DELETE')
+                                    <button type="button" class="btn btn-sm btn-danger" onclick="confirmDelete({{ $item->id }})">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
                                 </form>
+                                </td>
                             </td>
                         </tr>
 
@@ -97,26 +95,27 @@
         </div>
     </div>
 </div>
-@endsection
 
-@section('scripts')
-<!-- Tambah CDN SweetAlert -->
+@push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-    function hapusData(id) {
+    function confirmDelete(id) {
         Swal.fire({
             title: 'Yakin ingin menghapus?',
-            text: "Data yang dihapus tidak dapat dikembalikan!",
+            text: "Data riwayat akan dihapus permanen!",
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#d33',
             cancelButtonColor: '#6c757d',
-            confirmButtonText: 'Ya, hapus!'
+            confirmButtonText: 'Ya, hapus!',
+            cancelButtonText: 'Batal'
         }).then((result) => {
             if (result.isConfirmed) {
-                document.getElementById('form-hapus-' + id).submit();
+                document.getElementById('delete-form-' + id).submit();
             }
         });
     }
 </script>
+@endpush
+
 @endsection
