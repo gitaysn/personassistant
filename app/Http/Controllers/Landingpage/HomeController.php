@@ -2,169 +2,190 @@
 
 namespace App\Http\Controllers\Landingpage;
 
-use App\Http\Controllers\Admin\PerhitunganController;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\DataAlternatif;
 use App\Models\Kriteria;
+use App\Models\QuizHistory;
+use App\Models\Subkriteria;
+use Illuminate\Support\Str;
 
 class HomeController extends Controller
 {
     public function index()
     {
-        $perhitunganController = new PerhitunganController();
+        $skorAkhir = $this->getSkorAkhirByJenis('Dress');
+        $blouseSkorAkhir = $this->getSkorAkhirByJenis('Blouse');
+        $cardiganSkorAkhir = $this->getSkorAkhirByJenis('Cardigan');
+        $rokSkorAkhir = $this->getSkorAkhirByJenis('Rok');
+        $celanaSkorAkhir = $this->getSkorAkhirByJenis('Celana');
 
-        $dressRecommendation = $perhitunganController->showJenisPakaian('Dress');
-        $skorAkhir = $dressRecommendation->getData()['skorAkhir'];
+        $kriteria = Kriteria::with('subkriteria')->get();
 
-        $blouseRecommendation = $perhitunganController->showJenisPakaian('Blouse');
-        $blouseSkorAkhir = $blouseRecommendation->getData()['skorAkhir'];
-
-        $cardiganRecommendation = $perhitunganController->showJenisPakaian('Cardigan');
-        $cardiganSkorAkhir = $cardiganRecommendation->getData()['skorAkhir'];
-
-        $rokRecommendation = $perhitunganController->showJenisPakaian('Rok');
-        $rokSkorAkhir = $rokRecommendation->getData()['skorAkhir'];
-
-        $celanaRecommendation = $perhitunganController->showJenisPakaian('Celana');
-        $celanaSkorAkhir = $celanaRecommendation->getData()['skorAkhir'];
-
-        return view('landingpage.home', compact('skorAkhir', 'blouseSkorAkhir', 'cardiganSkorAkhir', 'rokSkorAkhir', 'celanaSkorAkhir'));
+        return view('landingpage.home', compact(
+            'skorAkhir',
+            'blouseSkorAkhir',
+            'cardiganSkorAkhir',
+            'rokSkorAkhir',
+            'celanaSkorAkhir',
+            'kriteria'
+        ));
     }
 
-    public function dress()
+    public function dress() { return $this->showJenisPakaian('Dress'); }
+    public function blouse() { return $this->showJenisPakaian('Blouse'); }
+    public function cardigan() { return $this->showJenisPakaian('Cardigan'); }
+    public function rok() { return $this->showJenisPakaian('Rok'); }
+    public function celana() { return $this->showJenisPakaian('Celana'); }
+
+    private function showJenisPakaian($jenis, $preferensi = [])
     {
-        return $this->showJenisPakaian('Dress');
-    }
+        $skorAkhir = $this->getSkorAkhirByJenis($jenis, $preferensi);
 
-    public function blouse()
-    {
-        return $this->showJenisPakaian('Blouse');
-    }
+        $alternatif = DataAlternatif::whereHas('penilaian.subkriteria', function ($query) use ($jenis) {
+            $query->where('nama_subkriteria', $jenis);
+        })->get();
 
-    public function cardigan()
-    {
-        return $this->showJenisPakaian('Cardigan');
-    }
+        $kriteria = Kriteria::with('subkriteria')->get();
 
-    public function rok()
-    {
-        return $this->showJenisPakaian('Rok');
-    }
-
-    public function celana()
-    {
-        return $this->showJenisPakaian('Celana');
-    }
-
-    private function showJenisPakaian($jenis)
-    {
-        // Memastikan $jenis adalah array dan filter menggunakan whereIn
-        $alternatif = DataAlternatif::with(['penilaian.subkriteria'])
-            ->whereHas('penilaian', function($query) use ($jenis) {
-                $query->where('kriteria_id', 3)
-                    ->whereHas('subkriteria', function($subquery) use ($jenis) {
-                        // Memfilter subkriteria berdasarkan nama yang ada dalam $jenis (bisa lebih dari satu)
-                        $subquery->whereIn('nama_subkriteria', [$jenis]); // Menggunakan whereIn untuk array
-                    });
-            })
-            ->get();
-
-        $kriteria = Kriteria::all();
-
-        $maxNilai = [];
-        $minNilai = [];
-
-        foreach ($kriteria as $index => $k) {
-            $nilaiKriteria = [];
-
-            foreach ($alternatif as $alt) {
-                $penilaian = $alt->penilaian->firstWhere('kriteria_id', $k->id);
-                if ($penilaian && $penilaian->subkriteria) {
-                    $nilaiKriteria[] = $penilaian->subkriteria->nilai;
-                }
-            }
-
-            $kode = 'C' . ($index + 1);
-            $maxNilai[$kode] = count($nilaiKriteria) > 0 ? max($nilaiKriteria) : 1;
-            $minNilai[$kode] = count($nilaiKriteria) > 0 ? min($nilaiKriteria) : 1;
-        }
-
-        $normalisasi = [];
-        $pembobotan = [];
-
-        foreach ($alternatif as $alt) {
-            $barisNormal = [];
-            $barisBobot = [];
-
-            foreach ($kriteria as $index => $k) {
-                $penilaian = $alt->penilaian->firstWhere('kriteria_id', $k->id);
-                $nilai = $penilaian && $penilaian->subkriteria ? $penilaian->subkriteria->nilai : 0;
-
-                $kode = 'C' . ($index + 1);
-
-                $normal = ($k->jenis == 'Cost')
-                    ? ($nilai > 0 ? round($minNilai[$kode] / $nilai, 3) : 0)
-                    : ($maxNilai[$kode] > 0 ? round($nilai / $maxNilai[$kode], 3) : 0);
-
-                $bobot = round($normal * $k->bobot, 3);
-
-                $barisNormal[$kode] = $normal;
-                $barisBobot[$kode] = $bobot;
-            }
-
-            $normalisasi[] = [
-                'nama' => $alt->nama_alternatif,
-                'nilai' => $barisNormal
-            ];
-
-            $pembobotan[] = [
-                'nama' => $alt->nama_alternatif,
-                'nilai' => $barisBobot
-            ];
-        }
-
-        $skorAkhir = [];
-
-        foreach ($pembobotan as $item) {
-            $skor = array_sum($item['nilai']);
-
-            // Cari gambar dari alternatif yang sesuai
-            $alt = $alternatif->firstWhere('nama_alternatif', $item['nama']);
-            $gambar = $alt ? $alt->gambar : null;
-
-            // Pastikan skor adalah angka atau string, bukan array
-            $skorAkhir[] = [
-                'nama' => $item['nama'],  // pastikan ini string
-                'skor' => round($skor, 3),  // pastikan ini angka, bukan array
-                'gambar' => $gambar,
-            ];
-        }
-
-        // Urutkan skorAkhir
-        usort($skorAkhir, function ($a, $b) {
-            return $b['skor'] <=> $a['skor'];
-        });
-
-        // Kirim data ke tampilan
         return view('landingpage.rekomendasi', compact(
             'alternatif',
             'kriteria',
             'jenis',
-            'normalisasi',
-            'pembobotan',
-            'skorAkhir'
+            'skorAkhir',
+            'preferensi'
         ));
+    }
+
+    private function getSkorAkhirByJenis($jenis, $preferensi = [], $withPreferensiBonus = false)
+    {
+        $mapping = [
+            'jenis_acara' => 'Jenis Acara',
+            'harga' => 'Harga',
+            'jenis_pakaian' => 'Jenis Pakaian',
+            'warna' => 'Warna Pakaian',
+            'lokasi' => 'Lokasi Acara',
+            'cuaca' => 'Cuaca Acara',
+        ];
+
+        $baseAlternatif = DataAlternatif::with(['penilaian.subkriteria.kriteria'])
+            ->whereHas('penilaian.subkriteria.kriteria', fn($q) => $q->where('nama_kriteria', 'Jenis Pakaian'))
+            ->whereHas('penilaian.subkriteria', fn($q) => $q->where('nama_subkriteria', $jenis))
+            ->get();
+
+        if ($baseAlternatif->isEmpty()) return [];
+
+        $kriteria = Kriteria::with('subkriteria')->get();
+
+        // Ambil preferensi user sebagai angka
+        $userPrefNilai = [];
+        foreach ($preferensi as $key => $val) {
+            $namaKriteria = $mapping[$key] ?? null;
+            if (!$namaKriteria) continue;
+
+            $krit = $kriteria->firstWhere('nama_kriteria', $namaKriteria);
+            if ($krit) {
+                $sub = Subkriteria::where('nama_subkriteria', $val)
+                    ->where('kriteria_id', $krit->id)->first();
+                if ($sub) {
+                    $userPrefNilai[$krit->id] = $sub->nilai;
+                }
+            }
         }
 
-    // ✅ Tambahan method prosesRekomendasi
+        // Hitung skor SAW berdasarkan selisih preferensi
+        $hasil = $baseAlternatif->map(function ($alt) use ($kriteria, $userPrefNilai) {
+            $totalSkor = 0;
+            foreach ($kriteria as $k) {
+                $pen = $alt->penilaian->firstWhere('kriteria_id', $k->id);
+                $nilaiAlt = $pen->subkriteria->nilai ?? 0;
+                $nilaiUser = $userPrefNilai[$k->id] ?? $nilaiAlt;
+
+                if (strtolower($k->jenis) === 'cost') {
+                    $normalAlt = $nilaiAlt > 0 ? 1 / $nilaiAlt : 0;
+                    $normalUser = $nilaiUser > 0 ? 1 / $nilaiUser : 0;
+                } else {
+                    $normalAlt = $nilaiAlt;
+                    $normalUser = $nilaiUser;
+                }
+
+                $selisih = abs($normalAlt - $normalUser);
+                $totalSkor += (1 - $selisih) * $k->bobot; // semakin dekat preferensi, semakin tinggi skor
+            }
+
+            return [
+                'id' => $alt->id,
+                'nama' => $alt->nama_alternatif,
+                'gambar' => $alt->gambar,
+                'skor_saw' => round($totalSkor, 4)
+            ];
+        });
+
+        return $hasil->sortByDesc('skor_saw')->values()->all();
+    }
+
     public function prosesRekomendasi(Request $request)
     {
-        // Tangkap jenis pakaian sebagai array
-        $jenisPakaian = $request->input('jenis_pakaian'); // Ini akan menangkap data array
-
-        // Pastikan mengirim data ke metode yang sesuai
+        $jenisPakaian = $request->input('jenis_pakaian');
         return $this->showJenisPakaian($jenisPakaian);
     }
 
+    public function simpanKuisionerDanRekomendasi(Request $request)
+    {
+        $request->validate([
+            'jenis_acara' => 'required',
+            'harga' => 'required',
+            'jenis_pakaian' => 'required',
+            'warna' => 'required',
+            'lokasi' => 'required',
+            'cuaca' => 'required',
+        ]);
+
+        $preferensi = $request->only([
+            'jenis_acara',
+            'harga',
+            'jenis_pakaian',
+            'warna',
+            'lokasi',
+            'cuaca'
+        ]);
+
+        $this->simpanRiwayatKuisioner($preferensi);
+
+        $jenis = $preferensi['jenis_pakaian'] ?? 'Dress';
+        $skorAkhir = $this->getSkorAkhirByJenis($jenis, $preferensi, true);
+
+        $alternatif = DataAlternatif::whereHas('penilaian.subkriteria', function ($query) use ($jenis) {
+            $query->where('nama_subkriteria', $jenis);
+        })->get();
+
+        $kriteria = Kriteria::with('subkriteria')->get();
+
+        return view('landingpage.rekomendasi', compact(
+            'alternatif',
+            'kriteria',
+            'jenis',
+            'skorAkhir',
+            'preferensi'
+        ));
+    }
+
+    private function simpanRiwayatKuisioner($preferensi)
+    {
+        try {
+            QuizHistory::create([
+                'user_preferences' => json_encode($preferensi),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } catch (\Exception $e) {
+            \Log::info('Gagal menyimpan riwayat kuisioner: ' . $e->getMessage());
+        }
+    }
+
+    public function getKriteria()
+    {
+        $kriteria = Kriteria::with('subkriteria')->get();
+        return response()->json($kriteria);
+    }
 }

@@ -57,7 +57,7 @@
 
         .card img {
             width: 100%;
-            height: auto; /* Biarkan tinggi mengikuti proporsi gambar */
+            height: auto;
             border-radius: 0.75rem;
             margin-bottom: 1rem;
         }
@@ -87,10 +87,10 @@
             margin-bottom: 1rem;
         }
 
-       .back-button {
+        .back-button {
             display: inline-block;
             margin-top: 2rem;
-            background-color: #065f46; /* Hijau gelap */
+            background-color: #065f46;
             color: white;
             padding: 0.75rem 1.5rem;
             border: none;
@@ -102,33 +102,41 @@
         }
 
         .back-button:hover {
-            background-color: #064e3b; /* Lebih gelap saat hover */
+            background-color: #064e3b;
         }
     </style>
 </head>
 <body>
 
     <h2>Rekomendasi Pakaian: {{ is_array($jenis) ? implode(', ', $jenis) : ucfirst($jenis) }}</h2>
-    <h4>Top Alternatif Berdasarkan Skor Akhir</h4>
+    <h4>Top Alternatif Berdasarkan Skor Akhir & Preferensi Anda</h4>
 
     <div class="cards-container">
-        @foreach (array_slice($skorAkhir, 0, 3) as $index => $alt)
+        @php
+            // Filter skor akhir agar hanya menampilkan yang cocok dengan preferensi
+            $skorFiltered = collect($skorAkhir)->sortByDesc('skor_total')->values()->take(3);
+        @endphp
+
+        @forelse ($skorFiltered as $index => $alt)
             <div class="card">
                 <div class="ranking">#{{ $index + 1 }}</div>
 
                 @if (!empty($alt['gambar']) && file_exists(public_path($alt['gambar'])))
-                    <img src="{{ asset($alt['gambar']) }}" alt="{{ $alt['nama_alternatif'] ?? 'Gambar' }}">
+                    <img src="{{ asset($alt['gambar']) }}" alt="{{ $alt['nama_alternatif'] ?? 'Pakaian' }}">
                 @else
-                    <div class="no-gambar">Tidak ada gambar</div>
+                    <div class="nama-alternatif">{{ $alt['nama_alternatif'] ?? 'Pakaian' }}</div>
                 @endif
 
                 <div class="nama-alternatif">{{ $alt['nama'] }}</div>
-                <div class="skor">Skor: {{ number_format($alt['skor'], 3) }}</div>
+                <div class="skor">Skor: {{ number_format($alt['skor_saw'], 3) }}</div>
+
             </div>
-        @endforeach
+        @empty
+            <p style="text-align:center; color:#9ca3af;">Tidak ada rekomendasi yang cocok dengan preferensi Anda.</p>
+        @endforelse
     </div>
 
-    <div style="text-align: center;"> 
+    <div style="text-align: center;">
         <a href="{{ route('home') }}#pilihpakaian" class="back-button">Kembali ke Halaman Awal</a>
     </div>
 

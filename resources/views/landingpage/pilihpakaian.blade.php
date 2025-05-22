@@ -1,24 +1,22 @@
 <section class="py-5" id="pilihpakaian">
-        <div class="bg-holder d-none d-sm-block" style="background-image:url(assets/img/illustrations/bg.png);background-position:top left;background-size:225px 755px;margin-top:-17.5rem;">
-        </div>
-        <!--/.bg-holder-->
+    <div class="bg-holder d-none d-sm-block" style="background-image:url(assets/img/illustrations/bg.png);background-position:top left;background-size:225px 755px;margin-top:-17.5rem;"></div>
 
-        <div class="container my-5">
-           <form method="POST" action="{{ url('/rekomendasi') }}">
+    <div class="container my-5">
+        <form action="{{ route('proses.rekomendasi') }}" method="POST">
             @csrf
-        <div class="row justify-content-center">
-            <div class="col-lg-8">
-                <div class="text-center mb-4">
-                    <h5 class="fw-bold fs-3 fs-lg-5 lh-sm">Pilih Pakaian Anda</h5>
-                    <p class="text-muted">Untuk mendapatkan rekomendasi pakaian yang paling sesuai dengan gaya dan kebutuhan Anda, silakan isi beberapa pertanyaan berikut.</p>
-                </div>
+            <div class="row justify-content-center">
+                <div class="col-lg-8">
+                    <div class="text-center mb-4">
+                        <h5 class="fw-bold fs-3 fs-lg-5 lh-sm">Pilih Pakaian Anda</h5>
+                        <p class="text-muted">Untuk mendapatkan rekomendasi pakaian yang paling sesuai dengan gaya dan kebutuhan Anda, silakan isi beberapa pertanyaan berikut.</p>
+                    </div>
 
-                <div class="card shadow-lg border-0 rounded-4">
-                    <div class="card-body p-5 bg-light">
-                        <!-- Progress Bar -->
-                        <div class="progress mb-4">
-                            <div class="progress-bar bg-primary" role="progressbar" style="width: 20%;" id="progressBar"></div>
-                        </div>
+                    <div class="card shadow-lg border-0 rounded-4">
+                        <div class="card-body p-5 bg-light">
+                            <!-- Progress Bar -->
+                            <div class="progress mb-4">
+                                <div class="progress-bar bg-primary" role="progressbar" style="width: 20%;" id="progressBar"></div>
+                            </div>
 
                             <!-- STEP 1 -->
                             <div class="step active" id="step-1">
@@ -91,32 +89,26 @@
                             <!-- STEP 4 -->
                             <div class="step" id="step-4">
                                 <h5 class="fw-bold mb-3">Pilih warna pakaian...</h5>
-                                
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" id="warna1" value="Dingin" name="warna">
-                                    <label class="form-check-label" for="warna1">Warna Dingin (Biru, Hijau, Ungu, Jeans)</label>
+                                    <label class="form-check-label" for="warna1">Warna Dingin</label>
                                 </div>
-
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" id="warna2" value="Panas" name="warna">
-                                    <label class="form-check-label" for="warna2">Warna Panas (Merah, Orange, Kuning)</label>
+                                    <label class="form-check-label" for="warna2">Warna Panas</label>
                                 </div>
-
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" id="warna3" value="Netral" name="warna">
-                                    <label class="form-check-label" for="warna3">Warna Netral (Putih, Hitam, Abu-abu)</label>
+                                    <label class="form-check-label" for="warna3">Warna Netral</label>
                                 </div>
-
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" id="warna4" value="Lembut" name="warna">
-                                    <label class="form-check-label" for="warna4">Warna Lembut (Merah muda, Biru muda, Hijau muda)</label>
+                                    <label class="form-check-label" for="warna4">Warna Lembut</label>
                                 </div>
-
                                 <div class="form-check mb-2">
                                     <input class="form-check-input" type="radio" id="warna5" value="Pastel" name="warna">
-                                    <label class="form-check-label" for="warna5">Warna Pastel (Cream, Coklat muda, Putih susu, Hijau kaki, Kuning gading)</label>
+                                    <label class="form-check-label" for="warna5">Warna Pastel</label>
                                 </div>
-
                                 <button type="button" class="btn btn-secondary me-2" onclick="prevStep()">Kembali</button>
                                 <button type="button" class="btn btn-primary" onclick="nextStep()">Selanjutnya</button>
                             </div>
@@ -151,11 +143,11 @@
                                 <button type="submit" class="btn btn-success">Hasil Rekomendasi</button>
                             </div>
 
-                        </form>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
+        </form>
     </div>
 
     <script>
@@ -171,6 +163,14 @@
         }
 
         function nextStep() {
+            const radios = document.querySelectorAll(`#step-${currentStep} input[type="radio"]`);
+            const isAnswered = Array.from(radios).some(radio => radio.checked);
+
+            if (!isAnswered) {
+                alert("Silakan isi pertanyaan ini terlebih dahulu.");
+                return;
+            }
+
             if (currentStep < totalSteps) {
                 currentStep++;
                 showStep(currentStep);
@@ -189,16 +189,8 @@
             progressBar.style.width = (step / totalSteps) * 100 + '%';
         }
 
-        document.getElementById('formRekomendasi').addEventListener('submit', function(e) {
-            e.preventDefault();
-            // Handle form submission logic here
-            alert('Form submitted!');
-        });
-
-        // Show the first step initially
         showStep(currentStep);
     </script>
 
-                  <!-- Tempat untuk menampilkan rekomendasi -->
-                  <div id="hasil-rekomendasi" style="margin-top: 20px;"></div>                  
-      </section>
+    <div id="hasil-rekomendasi" style="margin-top: 20px;"></div>
+</section>

@@ -89,34 +89,4 @@
     </div>
 </div>
 
-<!-- CARD 3: Skor Akhir & Top 3 -->
-<div class="card shadow mb-4 jenis-section" id="skor_akhir">
-    <div class="card-header py-3">
-        <h6 class="m-0 font-weight-bold text-danger">
-            Skor Akhir - Jenis Pakaian: {{ ucfirst($jenis) }}
-        </h6>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-bordered" width="100%" cellspacing="0">
-                <thead>
-                    <tr>
-                        <th class="text-center">Peringkat</th>
-                        <th class="text-center">Nama Alternatif</th>
-                        <th class="text-center">Skor Akhir</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach ($skorAkhir as $index => $item)
-                    <tr>
-                        <td class="text-center">{{ $index + 1 }}</td>
-                        <td class="text-center">{{ $item['nama'] }}</td>
-                        <td class="text-center">{{ number_format($item['skor'], 3) }}</td>
-                    </tr>
-                    @endforeach
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
 @endsection

@@ -182,51 +182,13 @@
             </script>            
 
             <!-- Nav Item - Hasil Akhir -->
-            <li class="nav-item {{ request()->is('admin/hasil/*') ? 'active' : '' }}">
-                <a class="nav-link" href="#" data-toggle="collapse" data-target="#collapseHasil" aria-expanded="true"
-                    aria-controls="collapseHasil">
-                    <i class="bi bi-graph-up"></i>
-                    <span>Hasil Akhir</span>
+            <li class="nav-item {{ request()->is('admin/riwayat') ? 'active' : '' }}">
+                <a class="nav-link" href="{{ route('admin.riwayat.index') }}">
+                    <i class="bi bi-hourglass-split"></i>
+                    <span>Riwayat</span>
                 </a>
-
-                <div id="collapseHasil" class="collapse {{ request()->is('admin/hasil/*') ? 'show' : '' }}" 
-                    aria-labelledby="headingPages" data-psarent="#accordionSidebar">
-                    <div class="bg-white py-2 collapse-inner rounded">
-                        <a class="collapse-item {{ request()->is('admin/hasil/dress') ? 'active' : '' }}" href="{{ route('admin.hasil.dress') }}">Dress</a>
-                        <a class="collapse-item {{ request()->is('admin/hasil/blouse') ? 'active' : '' }}" href="{{ route('admin.hasil.blouse') }}">Blouse</a>
-                        <a class="collapse-item {{ request()->is('admin/hasil/cardigan') ? 'active' : '' }}" href="{{ route('admin.hasil.cardigan') }}">Cardigan</a>
-                        <a class="collapse-item {{ request()->is('admin/hasil/rok') ? 'active' : '' }}" href="{{ route('admin.hasil.rok') }}">Rok</a>
-                        <a class="collapse-item {{ request()->is('admin/hasil/celana') ? 'active' : '' }}" href="{{ route('admin.hasil.celana') }}">Celana</a>
-                    </div>
-                </div>
             </li>
-
-            <script>
-                document.addEventListener("DOMContentLoaded", function () {
-                    let collapseMenu = document.getElementById("collapseHasil");
-                    let collapseToggle = document.querySelector("[data-target='#collapseHasil']");
-            
-                    if (!collapseMenu || !collapseToggle) return;
-            
-                    // Cek status collapse di localStorage
-                    let isOpen = localStorage.getItem("collapseHasil") === "open";
-            
-                    // Tunggu sebentar sebelum menyesuaikan tampilan
-                    setTimeout(() => {
-                        if (isOpen) {
-                            collapseMenu.classList.add("show");
-                        } else {
-                            collapseMenu.classList.remove("show");
-                        }
-                    }, 50);
-            
-                    // Event listener untuk toggle
-                    collapseToggle.addEventListener("click", function () {
-                        let willOpen = !collapseMenu.classList.contains("show");
-                        localStorage.setItem("collapseHasil", willOpen ? "open" : "closed");
-                    });
-                });
-            </script>  
+ 
 
             <!-- Divider -->
             <hr class="sidebar-divider">

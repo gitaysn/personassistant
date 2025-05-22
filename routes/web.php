@@ -8,11 +8,13 @@ use App\Http\Controllers\Admin\HasilAkhirController;
 use App\Http\Controllers\Admin\PenilaianController;
 use App\Http\Controllers\Admin\PerhitunganController;
 use App\Http\Controllers\Admin\ResetPasswordController;
+use App\Http\Controllers\Admin\RiwayatController;
 use App\Http\Controllers\Admin\SubkriteriaController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\ForgotPasswordController;
 use App\Http\Controllers\Landingpage\DressController;
 use App\Http\Controllers\Landingpage\HomeController;
+use App\Http\Controllers\QuizController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -29,12 +31,9 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
 
-// Menampilkan halaman rekomendasi (GET)
 Route::get('/rekomendasi', [HomeController::class, 'rekomendasi'])->name('rekomendasi');
 
-// Memproses formulir rekomendasi (POST)
-Route::post('/rekomendasi', [HomeController::class, 'prosesRekomendasi']);
-Route::post('/proses-rekomendasi', [HomeController::class, 'prosesRekomendasi'])->name('proses.rekomendasi');
+Route::post('/proses-rekomendasi', [HomeController::class, 'simpankuisionerdanrekomendasi'])->name('proses.rekomendasi');
 
 // Jika user sudah login, arahkan ke dashboard
 Route::get('/dashboard', function () {
@@ -112,12 +111,6 @@ Route::get('/perhitungan/cardigan', [PerhitunganController::class, 'cardigan'])-
 Route::get('/perhitungan/rok', [PerhitunganController::class, 'rok'])->name('admin.perhitungan.rok');
 Route::get('/perhitungan/celana', [PerhitunganController::class, 'celana'])->name('admin.perhitungan.celana');
 
-// Data Hasil Akhir
-Route::get('/hasil/dress', [HasilAkhirController::class, 'dress'])->name('admin.hasil.dress');
-Route::get('/hasil/blouse', [HasilAkhirController::class, 'blouse'])->name('admin.hasil.blouse');
-Route::get('/hasil/cardigan', [HasilAkhirController::class, 'cardigan'])->name('admin.hasil.cardigan');
-Route::get('/hasil/rok', [HasilAkhirController::class, 'rok'])->name('admin.hasil.rok');
-Route::get('/hasil/celana', [HasilAkhirController::class, 'celana'])->name('admin.hasil.celana');
+// Riwayat
+Route::get('/riwayat', [RiwayatController::class, 'index'])->name('admin.riwayat.index');
 
-// Unduh Laporan
-Route::get('/admin/hasil/export/{jenis}', [HasilAkhirController::class, 'exportPDF'])->name('admin.hasil.export');

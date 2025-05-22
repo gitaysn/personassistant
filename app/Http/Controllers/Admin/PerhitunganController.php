@@ -39,91 +39,65 @@ class PerhitunganController extends Controller
         $maxNilai = [];
         $minNilai = [];
 
-        // Loop setiap kriteria untuk mencari nilai max & min dari semua alternatif
         foreach ($kriteria as $index => $k) {
             $nilaiKriteria = [];
 
             foreach ($alternatif as $alt) {
-                // Ambil penilaian alternatif berdasarkan kriteria
                 $penilaian = $alt->penilaian->firstWhere('kriteria_id', $k->id);
                 if ($penilaian && $penilaian->subkriteria) {
                     $nilaiKriteria[] = $penilaian->subkriteria->nilai;
                 }
             }
 
-            $kode = 'C' . ($index + 1); // Buat kode seperti C1, C2, dst
+            $kode = 'C' . ($index + 1);
             $maxNilai[$kode] = count($nilaiKriteria) > 0 ? max($nilaiKriteria) : 1;
             $minNilai[$kode] = count($nilaiKriteria) > 0 ? min($nilaiKriteria) : 1;
         }
 
-        $normalisasi = []; // Menyimpan hasil normalisasi setiap alternatif
-        $pembobotan = []; // Menyimpan hasil pembobotan setiap alternatif
+        $normalisasi = [];
+        $pembobotan = [];
 
-        // Proses normalisasi dan pembobotan
         foreach ($alternatif as $alt) {
-            $barisNormal = []; // Normalisasi untuk satu alternatif
-            $barisBobot = []; // Bobot untuk satu alternatif
+            $barisNormal = [];
+            $barisBobot = [];
 
-        foreach ($kriteria as $index => $k) {
-            $penilaian = $alt->penilaian->firstWhere('kriteria_id', $k->id);
-            $nilai = $penilaian && $penilaian->subkriteria ? $penilaian->subkriteria->nilai : 0;
+            foreach ($kriteria as $index => $k) {
+                $penilaian = $alt->penilaian->firstWhere('kriteria_id', $k->id);
+                $nilai = $penilaian && $penilaian->subkriteria ? $penilaian->subkriteria->nilai : 0;
 
-            $kode = 'C' . ($index + 1);
+                $kode = 'C' . ($index + 1);
 
-            // Normalisasi berdasarkan jenis kriteria: Benefit atau Cost
-            if ($k->jenis == 'Cost') {
-                $normal = $nilai > 0 ? $minNilai[$kode] / $nilai : 0;
-            } else {
-                $normal = $maxNilai[$kode] > 0 ? $nilai / $maxNilai[$kode] : 0;
+                if ($k->jenis == 'Cost') {
+                    $normal = $nilai > 0 ? $minNilai[$kode] / $nilai : 0;
+                } else {
+                    $normal = $maxNilai[$kode] > 0 ? $nilai / $maxNilai[$kode] : 0;
+                }
+
+                $normalRounded = round($normal, 3);
+                $bobot = round($normalRounded * $k->bobot, 3);
+
+                $barisNormal[$kode] = $normalRounded;
+                $barisBobot[$kode] = $bobot;
             }
 
-            // Simpan yang sudah dibulatkan ke 3 digit
-            $normalRounded = round($normal, 3);
+            $normalisasi[] = [
+                'nama' => $alt->nama_alternatif,
+                'nilai' => $barisNormal
+            ];
 
-            // Hitung bobot dengan bobot kriteria
-            $bobot = round($normalRounded * $k->bobot, 3);
-
-            $barisNormal[$kode] = $normalRounded;
-            $barisBobot[$kode] = $bobot;
-        }
-
-         // Simpan hasil normalisasi dan bobot dari satu alternatif
-        $normalisasi[] = [
-            'nama' => $alt->nama_alternatif,
-            'nilai' => $barisNormal
-        ];
-
-        $pembobotan[] = [
-            'nama' => $alt->nama_alternatif,
-            'nilai' => $barisBobot
-        ];
-    }
-
-        // Hitung skor akhir
-        $skorAkhir = [];
-
-        // Hitung skor akhir dengan menjumlahkan semua nilai bobot
-        foreach ($pembobotan as $item) {
-            $skor = array_sum($item['nilai']);
-            $skorAkhir[] = [
-                'nama' => $item['nama'],
-                'skor' => round($skor, 3)
+            $pembobotan[] = [
+                'nama' => $alt->nama_alternatif,
+                'nilai' => $barisBobot
             ];
         }
 
-        // Urutkan dari skor tertinggi
-        usort($skorAkhir, function ($a, $b) {
-            return $b['skor'] <=> $a['skor'];
-        });
-
-        $viewName = strtolower($jenis); // Konversi nama jenis menjadi lowercase untuk nama file view
+        $viewName = strtolower($jenis);
         return view("admin.pages.perhitungan.$viewName", compact(
             'alternatif',
             'kriteria',
             'jenis',
             'normalisasi',
-            'pembobotan',
-            'skorAkhir'
+            'pembobotan'
         ));
     }
 }

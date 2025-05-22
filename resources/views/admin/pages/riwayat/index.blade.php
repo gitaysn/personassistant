@@ -1,0 +1,89 @@
+@extends('admin.layouts.base')
+
+@section('title', 'Riwayat Perhitungan')
+
+@section('content')
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 text-grey-800">
+        <i class="bi bi-hourglass-split"></i> Riwayat Hasil Perhitungan
+    </h1> 
+</div>
+
+<div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+        <h6 class="m-0 font-weight-bold" style="color: #064E3B;">
+            <i class="bi bi-table"></i> Daftar Riwayat Hasil Perhitungan
+        </h6>
+    </div>
+
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered" width="100%" cellspacing="0">
+                <thead>
+                    <tr>
+                        <th class="text-center">No</th>
+                        <th class="text-center">Tanggal</th>
+                        <th class="text-center">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($riwayat as $index => $item)
+                        <tr>
+                            <td class="text-center">{{ $index + 1 }}</td>
+                            <td class="text-center">{{ $item->created_at->format('d M Y H:i') }}</td>
+                            <td class="text-center">
+                                <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modalRiwayat{{ $item->id }}">
+                                    Lihat Detail
+                                </button>
+                            </td>
+                        </tr>
+
+                        <!-- Modal Detail -->
+                        <div class="modal fade" id="modalRiwayat{{ $item->id }}" tabindex="-1" aria-labelledby="modalLabel{{ $item->id }}" aria-hidden="true">
+                            <div class="modal-dialog modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title" id="modalLabel{{ $item->id }}">Detail Riwayat</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <h6>Jawaban Kuisioner:</h6>
+                                        @php
+                                            $kuisioner = is_string($item->data_kuisioner) ? json_decode($item->data_kuisioner, true) : $item->data_kuisioner;
+                                        @endphp
+                                        <ul>
+                                            @if (is_array($kuisioner))
+                                                @foreach ($kuisioner as $key => $value)
+                                                    <li><strong>{{ ucfirst($key) }}:</strong> {{ $value }}</li>
+                                                @endforeach
+                                            @else
+                                                <li>Data kuisioner tidak tersedia.</li>
+                                            @endif
+                                        </ul>
+
+                                        <h6 class="mt-3">Hasil Rekomendasi:</h6>
+                                        @php
+                                            $rekomendasi = is_string($item->hasil_rekomendasi) ? json_decode($item->hasil_rekomendasi, true) : $item->hasil_rekomendasi;
+                                        @endphp
+                                        <ol>
+                                            @if (is_array($rekomendasi))
+                                                @foreach ($rekomendasi as $produk)
+                                                    <li>
+                                                        {{ is_array($produk) ? ($produk['nama'] ?? implode(', ', $produk)) : $produk }}
+                                                    </li>
+                                                @endforeach
+                                            @else
+                                                <li>Tidak ada rekomendasi.</li>
+                                            @endif
+                                        </ol>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+@endsection
