@@ -113,4 +113,4 @@ Route::get('/perhitungan/celana', [PerhitunganController::class, 'celana'])->nam
 
 // Riwayat
 Route::get('/riwayat', [RiwayatController::class, 'index'])->name('admin.riwayat.index');
-
+Route::delete('/riwayat/{id}', [RiwayatController::class, 'destroy'])->name('admin.riwayat.destroy');

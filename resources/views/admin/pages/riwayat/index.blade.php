@@ -33,8 +33,19 @@
                             <td class="text-center">{{ $item->created_at->format('d M Y H:i') }}</td>
                             <td class="text-center">
                                 <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modalRiwayat{{ $item->id }}">
-                                    Lihat Detail
+                                    <i class="bi bi-folder2-open"></i>
                                 </button>
+
+                                <!-- Tombol Hapus pakai SweetAlert -->
+                                <button class="btn btn-sm btn-danger" onclick="hapusData({{ $item->id }})">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+
+                                <!-- Form Hapus Tersembunyi -->
+                                <form id="form-hapus-{{ $item->id }}" action="{{ route('admin.riwayat.destroy', $item->id) }}" method="POST" style="display: none;">
+                                    @csrf
+                                    @method('DELETE')
+                                </form>
                             </td>
                         </tr>
 
@@ -86,4 +97,26 @@
         </div>
     </div>
 </div>
+@endsection
+
+@section('scripts')
+<!-- Tambah CDN SweetAlert -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    function hapusData(id) {
+        Swal.fire({
+            title: 'Yakin ingin menghapus?',
+            text: "Data yang dihapus tidak dapat dikembalikan!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Ya, hapus!'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                document.getElementById('form-hapus-' + id).submit();
+            }
+        });
+    }
+</script>
 @endsection

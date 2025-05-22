@@ -158,6 +158,8 @@
           </div>
         </div>
       </section>
+
+      <hr>
       
       @include('landingpage.pilihpakaian')
 

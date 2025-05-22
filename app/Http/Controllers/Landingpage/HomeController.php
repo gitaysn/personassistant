@@ -178,10 +178,20 @@ class HomeController extends Controller
             'cuaca'
         ]);
 
-        $this->simpanRiwayatKuisioner($preferensi);
-
         $jenis = $preferensi['jenis_pakaian'] ?? 'Dress';
         $skorAkhir = $this->getSkorAkhirByJenis($jenis, $preferensi, true);
+
+        // ⬇️ SIMPAN ke quiz_histories (tanpa login)
+        $skorAkhir = $this->getSkorAkhirByJenis($jenis, $preferensi, true);
+        $top3 = collect($skorAkhir)->take(3)->map(function ($alt) {
+            return [
+                'nama' => $alt['nama'],
+                'skor' => $alt['skor_total'],
+                'gambar' => $alt['gambar'] ?? null
+            ];
+        })->values()->all();
+
+        $this->simpanRiwayatKuisioner($preferensi, $skorAkhir);
 
         $alternatif = DataAlternatif::whereHas('penilaian.subkriteria', function ($query) use ($jenis) {
             $query->where('nama_subkriteria', $jenis);
@@ -198,11 +208,12 @@ class HomeController extends Controller
         ));
     }
 
-    private function simpanRiwayatKuisioner($preferensi)
+    private function simpanRiwayatKuisioner($preferensi, $hasilRekomendasi = [])
     {
         try {
             QuizHistory::create([
-                'user_preferences' => json_encode($preferensi),
+                'data_kuisioner' => json_encode($preferensi),
+                'hasil_rekomendasi' => json_encode($hasilRekomendasi),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
