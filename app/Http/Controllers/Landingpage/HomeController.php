@@ -104,12 +104,6 @@ class HomeController extends Controller
             $nilai = $baseAlternatif->map(fn($alt) =>
                 $alt->penilaian->firstWhere('kriteria_id', $k->id)?->subkriteria->nilai
             )->filter();
-
-            // ✅ Tambahkan preferensi user ke array nilai
-            if (isset($userPreferensi[$k->id])) {
-                $nilai->push($userPreferensi[$k->id]);
-            }
-
             $maxNilai[$k->id] = $nilai->max() ?? 1;
             $minNilai[$k->id] = $nilai->min() ?? 1;
         }
@@ -124,7 +118,7 @@ class HomeController extends Controller
                 $nilaiAlt = $pn->subkriteria->nilai ?? 0;
                 $nilaiUser = $userPreferensi[$k->id] ?? 0;
 
-                // Perhitungan normalisasi
+                // Normalisasi berdasarkan jenis kriteria (benefit atau cost)
                 if (strtolower($k->jenis) === 'cost') {
                     $normalAlt = $nilaiAlt > 0 ? $minNilai[$k->id] / $nilaiAlt : 0;
                     $normalUser = $nilaiUser > 0 ? $minNilai[$k->id] / $nilaiUser : 0;
@@ -134,7 +128,7 @@ class HomeController extends Controller
                 }
 
                 $selisih = abs($normalAlt - $normalUser);
-                $bobot = (1 - $selisih) * $k->bobot;
+                $bobot = round((1 - $selisih) * $k->bobot, 4); // semakin kecil selisih, semakin besar skor
 
                 $totalSkor += $bobot;
 
@@ -152,8 +146,8 @@ class HomeController extends Controller
                 'id' => $alt->id,
                 'nama' => $alt->nama_alternatif,
                 'gambar' => $alt->gambar,
-                'skor_total' => round($totalSkor, 6),
-                'skor_saw' => round($totalSkor, 6),
+                'skor_total' => round($totalSkor, 4),
+                'skor_saw' => round($totalSkor, 4), // supaya blade tidak error
                 'detail_normalisasi' => $detail
             ];
         });
@@ -191,10 +185,8 @@ class HomeController extends Controller
 
         $jenis = $preferensi['jenis_pakaian'] ?? 'Dress';
 
-         // Hitung hasil rekomendasi berdasarkan preferensi
+        // ⬇️ SIMPAN ke quiz_histories (tanpa login)
         $skorAkhir = $this->getSkorAkhirByJenis($jenis, $preferensi, true);
-
-         // Ambil 3 teratas untuk disimpan ke histori (opsional)
         $top3 = collect($skorAkhir)->take(3)->map(function ($alt) {
             return [
                 'nama' => $alt['nama'],
@@ -203,7 +195,6 @@ class HomeController extends Controller
             ];
         })->values()->all();
 
-        // Simpan ke tabel quiz_histories
         $this->simpanRiwayatKuisioner($preferensi, $skorAkhir);
 
         $alternatif = DataAlternatif::whereHas('penilaian.subkriteria', function ($query) use ($jenis) {
@@ -221,7 +212,6 @@ class HomeController extends Controller
         ));
     }
 
-     // Simpan data kuisioner dan hasil rekomendasi ke database (tabel quiz_histories)
     private function simpanRiwayatKuisioner($preferensi, $hasilRekomendasi = [])
     {
         try {
@@ -235,7 +225,6 @@ class HomeController extends Controller
         }
     }
 
-    // Ambil semua kriteria beserta subkriteria-nya (untuk front-end)
     public function getKriteria()
     {
         $kriteria = Kriteria::with('subkriteria')->get();
