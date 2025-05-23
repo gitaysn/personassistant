@@ -17,6 +17,18 @@
     </div>
 
     <div class="card-body">
+        <form method="GET" class="mb-3 d-flex align-items-center">
+    <label for="per_page" class="me-2 mb-0">Tampilkan</label>
+    <select name="per_page" id="per_page" class="form-select form-select-sm w-auto me-2" onchange="this.form.submit()">
+        @foreach([5, 10, 20, 30] as $value)
+            <option value="{{ $value }}" {{ request('per_page', 5) == $value ? 'selected' : '' }}>
+                {{ $value }}
+            </option>
+        @endforeach
+    </select>
+    <span class="mb-0">entri</span>
+</form>
+
         <div class="table-responsive">
             <table class="table table-bordered" width="100%" cellspacing="0">
                 <thead>
@@ -29,7 +41,7 @@
                 <tbody>
                     @foreach ($riwayat as $index => $item)
                         <tr>
-                            <td class="text-center">{{ $index + 1 }}</td>
+                            <td class="text-center">{{ $riwayat->firstItem() + $index }}</td>
                             <td class="text-center">{{ $item->created_at->setTimezone('Asia/Jakarta')->format('d M Y H:i') }}</td>
                             <td class="text-center">
                                 <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modalRiwayat{{ $item->id }}">
@@ -43,7 +55,6 @@
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </form>
-                                </td>
                             </td>
                         </tr>
 
@@ -92,6 +103,10 @@
                     @endforeach
                 </tbody>
             </table>
+
+            <div class="mt-3">
+                {{ $riwayat->links('pagination::bootstrap-5') }}
+            </div>
         </div>
     </div>
 </div>
@@ -117,5 +132,7 @@
     }
 </script>
 @endpush
+
+
 
 @endsection
