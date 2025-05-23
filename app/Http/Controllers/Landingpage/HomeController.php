@@ -68,8 +68,6 @@ class HomeController extends Controller
         'cuaca' => 'Cuaca Acara',
     ];
 
-    \Log::info('Preferensi diterima: ', $preferensi);
-
     $baseAlternatif = DataAlternatif::with(['penilaian.subkriteria.kriteria'])
         ->whereHas('penilaian.subkriteria.kriteria', fn($q) => $q->where('nama_kriteria', 'Jenis Pakaian'))
         ->whereHas('penilaian.subkriteria', fn($q) => $q->where('nama_subkriteria', $jenis))
@@ -218,7 +216,6 @@ class HomeController extends Controller
                 'updated_at' => now(),
             ]);
         } catch (\Exception $e) {
-            \Log::info('Gagal menyimpan riwayat kuisioner: ' . $e->getMessage());
         }
     }
 
