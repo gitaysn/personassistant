@@ -7,61 +7,152 @@ use Illuminate\Http\Request;
 use App\Models\DataAlternatif;
 use App\Models\Kriteria;
 use App\Models\QuizHistory;
-use App\Models\Subkriteria;
-use Illuminate\Support\Str;
 
 class HomeController extends Controller
 {
-     // Menampilkan halaman utama dengan berbagai jenis pakaian yang direkomendasikan
     public function index()
     {
-        $skorAkhir = $this->getSkorAkhirByJenis('Dress');
-        $blouseSkorAkhir = $this->getSkorAkhirByJenis('Blouse');
-        $cardiganSkorAkhir = $this->getSkorAkhirByJenis('Cardigan');
-        $rokSkorAkhir = $this->getSkorAkhirByJenis('Rok');
-        $celanaSkorAkhir = $this->getSkorAkhirByJenis('Celana');
-
-        $kriteria = Kriteria::with('subkriteria')->get();
-
-        return view('landingpage.home', compact(
-            'skorAkhir',
-            'blouseSkorAkhir',
-            'cardiganSkorAkhir',
-            'rokSkorAkhir',
-            'celanaSkorAkhir',
-            'kriteria'
-        ));
+        return view('landingpage.home', [
+            'skorAkhir' => collect($this->getSkorAkhirByJenis('Dress'))->take(3)->values(),
+            'blouseSkorAkhir' => collect($this->getSkorAkhirByJenis('Blouse'))->take(3)->values(),
+            'cardiganSkorAkhir' => collect($this->getSkorAkhirByJenis('Cardigan'))->take(3)->values(),
+            'rokSkorAkhir' => collect($this->getSkorAkhirByJenis('Rok'))->take(3)->values(),
+            'celanaSkorAkhir' => collect($this->getSkorAkhirByJenis('Celana'))->take(3)->values(),
+            'kriteria' => Kriteria::with('subkriteria')->get()
+        ]);
     }
 
-    // Masing-masing method berikut akan menampilkan halaman rekomendasi sesuai jenis pakaian
     public function dress() { return $this->showJenisPakaian('Dress'); }
     public function blouse() { return $this->showJenisPakaian('Blouse'); }
     public function cardigan() { return $this->showJenisPakaian('Cardigan'); }
     public function rok() { return $this->showJenisPakaian('Rok'); }
     public function celana() { return $this->showJenisPakaian('Celana'); }
 
-     // Method untuk menampilkan rekomendasi berdasarkan jenis pakaian dan preferensi user (jika ada)
     private function showJenisPakaian($jenis, $preferensi = [])
     {
         $skorAkhir = $this->getSkorAkhirByJenis($jenis, $preferensi);
-
-        $alternatif = DataAlternatif::whereHas('penilaian.subkriteria', function ($query) use ($jenis) {
-            $query->where('nama_subkriteria', $jenis);
-        })->get();
-
+        $alternatif = DataAlternatif::whereHas('penilaian.subkriteria', fn($q) => $q->where('nama_subkriteria', $jenis))->get();
         $kriteria = Kriteria::with('subkriteria')->get();
 
-        return view('landingpage.rekomendasi', compact(
-            'alternatif',
-            'kriteria',
-            'jenis',
-            'skorAkhir',
-            'preferensi'
-        ));
+        return view('landingpage.rekomendasi', compact('alternatif', 'kriteria', 'jenis', 'skorAkhir', 'preferensi'));
     }
 
-     // Method utama untuk menghitung skor SAW (Simple Additive Weighting) berdasarkan jenis dan preferensi
-    private function getSkorAkhirByJenis($jenis, $preferensi = [], $withPreferensiBonus = false)
+    /**
+     * Fungsi untuk parsing rentang harga yang mempertimbangkan format dengan titik
+     */
+    private function parseHargaRange($hargaString)
+    {
+        // Menghilangkan spasi dan mengambil semua angka termasuk yang menggunakan titik sebagai pemisah ribuan
+        $cleaned = str_replace([' ', '.'], ['', ''], $hargaString);
+        
+        // Mencari pola angka - angka
+        if (preg_match('/(\d+)\s*-\s*(\d+)/', $cleaned, $matches)) {
+            return [
+                'start' => (int) $matches[1],
+                'end' => (int) $matches[2]
+            ];
+        }
+        
+        return null;
+    }
+
+    /**
+     * Fungsi untuk menghitung similarity score antara preferensi user dan nilai alternatif
+     */
+    private function hitungSimilarityScore($preferensiValue, $alternatifValue, $kriteriaNama)
+    {
+        // Untuk kriteria harga, lakukan pengecekan range
+        if (strtolower($kriteriaNama) === 'harga') {
+            $preferensiRange = $this->parseHargaRange($preferensiValue);
+            $alternatifRange = $this->parseHargaRange($alternatifValue);
+            
+            if ($preferensiRange && $alternatifRange) {
+                // Hitung overlap range
+                $overlapStart = max($preferensiRange['start'], $alternatifRange['start']);
+                $overlapEnd = min($preferensiRange['end'], $alternatifRange['end']);
+                
+                if ($overlapStart <= $overlapEnd) {
+                    // Ada overlap, hitung persentase overlap
+                    $overlapSize = $overlapEnd - $overlapStart;
+                    $preferensiSize = $preferensiRange['end'] - $preferensiRange['start'];
+                    $similarity = $overlapSize / max($preferensiSize, 1);
+                    return min(1.0, $similarity);
+                } else {
+                    // Tidak ada overlap, hitung kedekatan
+                    $distance = min(
+                        abs($preferensiRange['start'] - $alternatifRange['end']),
+                        abs($preferensiRange['end'] - $alternatifRange['start'])
+                    ) / max($preferensiRange['end'], $alternatifRange['end'], 1);
+                    return max(0.1, 1 - $distance); // Minimal similarity 0.1
+                }
+            }
+        }
+        
+        // Untuk kriteria lainnya, lakukan exact match atau partial match
+        if (strtolower($preferensiValue) === strtolower($alternatifValue)) {
+            return 1.0; // Perfect match
+        }
+        
+        // Partial match berdasarkan similarity string
+        $similarity = $this->calculateStringSimilarity($preferensiValue, $alternatifValue);
+        return max(0.1, $similarity); // Minimal similarity 0.1
+    }
+
+    /**
+     * Fungsi untuk menghitung similarity antara dua string
+     */
+    private function calculateStringSimilarity($str1, $str2)
+    {
+        $str1 = strtolower(trim($str1));
+        $str2 = strtolower(trim($str2));
+        
+        // Jika sama persis
+        if ($str1 === $str2) return 1.0;
+        
+        // Jika salah satu mengandung yang lain
+        if (strpos($str1, $str2) !== false || strpos($str2, $str1) !== false) {
+            return 0.8;
+        }
+        
+        // Hitung Levenshtein distance untuk similarity
+        $maxLen = max(strlen($str1), strlen($str2));
+        if ($maxLen === 0) return 1.0;
+        
+        $distance = levenshtein($str1, $str2);
+        $similarity = 1 - ($distance / $maxLen);
+        
+        return max(0.3, $similarity); // Minimal similarity 0.3
+    }
+
+    /**
+     * Fungsi untuk mendapatkan nilai default berdasarkan preferensi user
+     */
+    private function getNilaiDefaultFromPreferensi($kriteriaNama, $preferensiValue, $maxNilai)
+    {
+        // Mapping tingkat preferensi ke nilai
+        $preferenceMapping = [
+            'sangat tinggi' => 0.9,
+            'tinggi' => 0.8,
+            'sedang' => 0.6,
+            'rendah' => 0.4,
+            'sangat rendah' => 0.2
+        ];
+        
+        $lowerPreference = strtolower($preferensiValue);
+        
+        // Cek apakah ada mapping langsung
+        foreach ($preferenceMapping as $key => $multiplier) {
+            if (strpos($lowerPreference, $key) !== false) {
+                return $maxNilai * $multiplier;
+            }
+        }
+        
+        // Default berdasarkan panjang string atau karakteristik lainnya
+        $baseScore = min(strlen($preferensiValue) * 2, $maxNilai * 0.7);
+        return max($maxNilai * 0.3, $baseScore); // Minimal 30% dari max nilai
+    }
+
+    private function getSkorAkhirByJenis($jenis, $preferensi = [])
     {
         $mapping = [
             'jenis_acara' => 'Jenis Acara',
@@ -72,97 +163,293 @@ class HomeController extends Controller
             'cuaca' => 'Cuaca Acara',
         ];
 
-        // Ambil semua alternatif dengan jenis pakaian tertentu
-        $baseAlternatif = DataAlternatif::with(['penilaian.subkriteria.kriteria'])
+        // Ambil semua alternatif untuk jenis pakaian tertentu
+        $alternatif = DataAlternatif::with(['penilaian.subkriteria.kriteria'])
             ->whereHas('penilaian.subkriteria.kriteria', fn($q) => $q->where('nama_kriteria', 'Jenis Pakaian'))
             ->whereHas('penilaian.subkriteria', fn($q) => $q->where('nama_subkriteria', $jenis))
             ->get();
 
-        if ($baseAlternatif->isEmpty()) return [];
+        // FALLBACK: Jika tidak ada alternatif yang sesuai dengan jenis pakaian dari preferensi
+        if ($alternatif->isEmpty()) {
+            \Log::warning("Tidak ada alternatif untuk jenis pakaian: {$jenis}");
+            
+            // Ambil semua alternatif tanpa filter jenis pakaian spesifik
+            $alternatif = DataAlternatif::with(['penilaian.subkriteria.kriteria'])->get();
+            
+            if ($alternatif->isEmpty()) {
+                return [
+                    'data' => [],
+                    'message' => 'Tidak ada data alternatif dalam database',
+                    'fallback' => true
+                ];
+            }
+        }
 
         $kriteria = Kriteria::with('subkriteria')->get();
 
-        // Ambil nilai preferensi user sebagai bobot pembanding
-        $userPreferensi = [];
-        foreach ($preferensi as $key => $val) {
-            $namaKriteria = $mapping[$key] ?? null;
-            if ($namaKriteria) {
-                $kriteriaModel = $kriteria->firstWhere('nama_kriteria', $namaKriteria);
-                if ($kriteriaModel) {
-                    $sub = $kriteriaModel->subkriteria->firstWhere('nama_subkriteria', $val);
-                    if ($sub) {
-                        $userPreferensi[$kriteriaModel->id] = $sub->nilai;
+        // Hitung nilai max dan min yang konsisten untuk normalisasi SAW
+        $maxNilai = [];
+        $minNilai = [];
+        
+        foreach ($kriteria as $k) {
+            $nilaiKriteria = [];
+            
+            if ($k->nama_kriteria === 'Jenis Pakaian') {
+                // Untuk kriteria Jenis Pakaian, max/min dari subkriteria yang tersedia
+                $subkriteriaTarget = $k->subkriteria->where('nama_subkriteria', $jenis);
+                if ($subkriteriaTarget->isNotEmpty()) {
+                    $nilaiKriteria = $subkriteriaTarget->pluck('nilai')
+                                                   ->filter(function($val) { return $val > 0; })
+                                                   ->toArray();
+                } else {
+                    // Fallback: gunakan semua subkriteria jenis pakaian
+                    $nilaiKriteria = $k->subkriteria->pluck('nilai')
+                                                   ->filter(function($val) { return $val > 0; })
+                                                   ->toArray();
+                }
+            } else {
+                // Untuk kriteria lainnya, ambil dari SEMUA alternatif yang ada
+                foreach ($alternatif as $alt) {
+                    $penilaian = $alt->penilaian->where('kriteria_id', $k->id)->first();
+                    if ($penilaian && $penilaian->subkriteria && $penilaian->subkriteria->nilai > 0) {
+                        $nilaiKriteria[] = $penilaian->subkriteria->nilai;
                     }
                 }
             }
+            
+            if (!empty($nilaiKriteria)) {
+                $maxNilai[$k->id] = max($nilaiKriteria);
+                $minNilai[$k->id] = min($nilaiKriteria);
+            } else {
+                // Fallback jika tidak ada nilai valid
+                $maxNilai[$k->id] = 100; // Nilai default
+                $minNilai[$k->id] = 1;
+            }
+            
+            \Log::info("=== DEBUG KRITERIA: {$k->nama_kriteria} ===");
+            \Log::info("Jenis Pakaian: {$jenis}");
+            \Log::info("Nilai ditemukan: " . json_encode($nilaiKriteria));
+            \Log::info("Max: {$maxNilai[$k->id]}, Min: {$minNilai[$k->id]}");
         }
 
-        // Hitung nilai max dan min
-        $maxNilai = [];
-        $minNilai = [];
-        foreach ($kriteria as $i => $k) {
-            $nilai = $baseAlternatif->map(fn($alt) =>
-                $alt->penilaian->firstWhere('kriteria_id', $k->id)?->subkriteria->nilai
-            )->filter();
-            $maxNilai[$k->id] = $nilai->max() ?? 1;
-            $minNilai[$k->id] = $nilai->min() ?? 1;
-        }
+        // Buat matriks keputusan untuk ditampilkan
+        $matriksKeputusan = [];
+        $matriksNormalisasi = [];
+        $matriksTerbobot = [];
 
-        // Hitung skor berdasarkan selisih preferensi user vs alternatif
-        $hasilSAW = $baseAlternatif->map(function ($alt) use ($kriteria, $maxNilai, $minNilai, $userPreferensi) {
+        $hasil = $alternatif->map(function ($alt) use ($kriteria, $maxNilai, $minNilai, $preferensi, $mapping, &$matriksKeputusan, &$matriksNormalisasi, &$matriksTerbobot) {
             $totalSkor = 0;
-            $detail = [];
-
+            $detailSkor = [];
+            $detailKriteria = [];
+            $nilaiKeputusan = [];
+            $nilaiNormalisasi = [];
+            $nilaiTerbobot = [];
+            $isUsingFallback = false;
+            
+            \Log::info("=== PERHITUNGAN UNTUK: {$alt->nama_alternatif} ===");
+            
             foreach ($kriteria as $k) {
-                $pn = $alt->penilaian->firstWhere('kriteria_id', $k->id);
-                $nilaiAlt = $pn->subkriteria->nilai ?? 0;
-                $nilaiUser = $userPreferensi[$k->id] ?? 0;
+                $penilaian = $alt->penilaian->where('kriteria_id', $k->id)->first();
+                $nilaiAlt = $penilaian?->subkriteria->nilai ?? 0;
+                $namaSubkriteriaAlt = $penilaian?->subkriteria->nama_subkriteria ?? 'Tidak ada';
 
-                // Normalisasi berdasarkan jenis kriteria (benefit atau cost)
-                if (strtolower($k->jenis) === 'cost') {
-                    $normalAlt = $nilaiAlt > 0 ? $minNilai[$k->id] / $nilaiAlt : 0;
-                    $normalUser = $nilaiUser > 0 ? $minNilai[$k->id] / $nilaiUser : 0;
+                // FALLBACK: Jika tidak ada penilaian dari database, gunakan estimasi berdasarkan preferensi
+                if (!$penilaian || $nilaiAlt == 0) {
+                    $isUsingFallback = true;
+                    $preferensiKey = array_search($k->nama_kriteria, $mapping);
+                    
+                    if ($preferensiKey && isset($preferensi[$preferensiKey])) {
+                        // Estimasi nilai berdasarkan preferensi user
+                        $nilaiAlt = $this->getNilaiDefaultFromPreferensi($k->nama_kriteria, $preferensi[$preferensiKey], $maxNilai[$k->id]);
+                        $namaSubkriteriaAlt = $preferensi[$preferensiKey] . ' (estimasi)';
+                        
+                        \Log::info("FALLBACK - Menggunakan estimasi untuk {$k->nama_kriteria}: {$nilaiAlt}");
+                    } else {
+                        // Jika tidak ada preferensi, gunakan nilai tengah
+                        $nilaiAlt = ($maxNilai[$k->id] + $minNilai[$k->id]) / 2;
+                        $namaSubkriteriaAlt = 'Nilai default (tengah)';
+                        
+                        \Log::info("FALLBACK - Menggunakan nilai default untuk {$k->nama_kriteria}: {$nilaiAlt}");
+                    }
                 } else {
-                    $normalAlt = $maxNilai[$k->id] > 0 ? $nilaiAlt / $maxNilai[$k->id] : 0;
-                    $normalUser = $maxNilai[$k->id] > 0 ? $nilaiUser / $maxNilai[$k->id] : 0;
+                    // Jika ada data dari database, cek similarity dengan preferensi user
+                    $preferensiKey = array_search($k->nama_kriteria, $mapping);
+                    if ($preferensiKey && isset($preferensi[$preferensiKey])) {
+                        $similarityScore = $this->hitungSimilarityScore($preferensi[$preferensiKey], $namaSubkriteriaAlt, $k->nama_kriteria);
+                        
+                        // Boost nilai berdasarkan similarity dengan preferensi user
+                        $nilaiAlt = $nilaiAlt * (0.5 + 0.5 * $similarityScore);
+                        
+                        \Log::info("SIMILARITY BOOST - {$k->nama_kriteria}: {$preferensi[$preferensiKey]} vs {$namaSubkriteriaAlt} = {$similarityScore}");
+                    }
                 }
 
-                $selisih = abs($normalAlt - $normalUser);
-                $bobot = round((1 - $selisih) * $k->bobot, 4); // semakin kecil selisih, semakin besar skor
+                // Simpan untuk matriks keputusan
+                $nilaiKeputusan[$k->nama_kriteria] = $nilaiAlt;
 
-                $totalSkor += $bobot;
+                // Normalisasi SAW yang benar - TANPA PEMBULATAN
+                if (strtolower($k->jenis) === 'cost') {
+                    // KRITERIA COST (misal: Harga) - semakin rendah semakin baik
+                    if ($nilaiAlt > 0) {
+                        $normalisasi = $minNilai[$k->id] / $nilaiAlt;
+                    } else {
+                        $normalisasi = 0;
+                    }
+                } else {
+                    // KRITERIA BENEFIT - semakin tinggi semakin baik  
+                    if ($maxNilai[$k->id] > 0) {
+                        $normalisasi = $nilaiAlt / $maxNilai[$k->id];
+                    } else {
+                        $normalisasi = 0;
+                    }
+                }
 
-                $detail[] = [
-                    'kriteria' => $k->nama_kriteria,
-                    'alt_val' => $nilaiAlt,
-                    'user_val' => $nilaiUser,
-                    'selisih' => $selisih,
-                    'bobot_kriteria' => $k->bobot,
-                    'skor_kriteria' => $bobot,
+                // Pastikan normalisasi dalam rentang [0,1]
+                $normalisasi = max(0, min(1, $normalisasi));
+
+                // Skor kriteria = normalisasi × bobot
+                $skorKriteria = $normalisasi * $k->bobot;
+                $totalSkor += $skorKriteria;
+
+                // Simpan untuk matriks
+                $nilaiNormalisasi[$k->nama_kriteria] = $normalisasi;
+                $nilaiTerbobot[$k->nama_kriteria] = $skorKriteria;
+
+                // Simpan detail untuk setiap kriteria
+                $detailSkor[$k->nama_kriteria] = $skorKriteria;
+                $detailKriteria[$k->nama_kriteria] = [
+                    'nilai_alternatif' => $nilaiAlt,
+                    'nama_subkriteria' => $namaSubkriteriaAlt,
+                    'bobot' => $k->bobot,
+                    'max_nilai' => $maxNilai[$k->id],
+                    'min_nilai' => $minNilai[$k->id],
+                    'normalisasi' => $normalisasi,
+                    'skor_kriteria' => $skorKriteria,
+                    'jenis' => $k->jenis,
+                    'is_fallback' => $isUsingFallback
                 ];
+                
+                \Log::info("Kriteria: {$k->nama_kriteria}");
+                \Log::info("Nilai Alt: {$nilaiAlt}, Subkriteria: {$namaSubkriteriaAlt}");
+                \Log::info("Normalisasi: {$normalisasi}, Skor: {$skorKriteria}");
+                \Log::info("---");
             }
+
+            // Simpan ke matriks
+            $matriksKeputusan[$alt->nama_alternatif] = $nilaiKeputusan;
+            $matriksNormalisasi[$alt->nama_alternatif] = array_map(function($val) {
+                return round($val, 3);
+            }, $nilaiNormalisasi);
+            $matriksTerbobot[$alt->nama_alternatif] = array_map(function($val) {
+                return round($val, 3);
+            }, $nilaiTerbobot);
+
+            $finalScore = round($totalSkor, 3);
+            
+            \Log::info("TOTAL SKOR FINAL {$alt->nama_alternatif}: {$finalScore}");
+            \Log::info("================================");
 
             return [
                 'id' => $alt->id,
                 'nama' => $alt->nama_alternatif,
                 'gambar' => $alt->gambar,
-                'skor_total' => round($totalSkor, 4),
-                'skor_saw' => round($totalSkor, 4), // supaya blade tidak error
-                'detail_normalisasi' => $detail
+                'skor_total' => $finalScore,
+                'detail_skor' => array_map(function($val) {
+                    return round($val, 3);
+                }, $detailSkor),
+                'detail_kriteria' => array_map(function($detail) {
+                    return [
+                        'nilai_alternatif' => $detail['nilai_alternatif'],
+                        'nama_subkriteria' => $detail['nama_subkriteria'],
+                        'bobot' => $detail['bobot'],
+                        'max_nilai' => $detail['max_nilai'],
+                        'min_nilai' => $detail['min_nilai'],
+                        'normalisasi' => round($detail['normalisasi'], 3),
+                        'skor_kriteria' => round($detail['skor_kriteria'], 3),
+                        'jenis' => $detail['jenis'],
+                        'is_fallback' => $detail['is_fallback'] ?? false
+                    ];
+                }, $detailKriteria),
+                'breakdown' => $this->generateBreakdownText($detailKriteria, $totalSkor, $isUsingFallback),
+                'has_fallback' => $isUsingFallback
             ];
-        });
+        })->sortByDesc('skor_total')->take(4)->values();
 
-        return $hasilSAW->sortByDesc('skor_total')->values()->all();
+        $hasil = $hasil->all();
+        
+        return [
+            'data' => $hasil,
+            'matriks_keputusan' => $matriksKeputusan,
+            'matriks_normalisasi' => $matriksNormalisasi,
+            'matriks_terbobot' => $matriksTerbobot,
+            'info_kriteria' => $kriteria->map(function($k) use ($maxNilai, $minNilai) {
+                return [
+                    'nama' => $k->nama_kriteria,
+                    'bobot' => $k->bobot,
+                    'jenis' => $k->jenis,
+                    'max_nilai' => $maxNilai[$k->id],
+                    'min_nilai' => $minNilai[$k->id]
+                ];
+            })->keyBy('nama')->all(),
+            'has_fallback_data' => collect($hasil)->contains('has_fallback', true),
+            'preferensi_applied' => !empty($preferensi)
+        ];
     }
 
-     // Proses untuk menampilkan rekomendasi berdasarkan input jenis pakaian
-    public function prosesRekomendasi(Request $request)
+    /**
+     * Generate breakdown text untuk menjelaskan perhitungan skor SAW
+     */
+    private function generateBreakdownText($detailKriteria, $totalSkor, $hasFallback = false)
     {
-        $jenisPakaian = $request->input('jenis_pakaian');
-        return $this->showJenisPakaian($jenisPakaian);
+        $breakdown = "Perhitungan Skor SAW (Simple Additive Weighting):\n";
+        $breakdown .= "================================================\n";
+        
+        if ($hasFallback) {
+            $breakdown .= "⚠️  CATATAN: Beberapa nilai menggunakan estimasi karena data tidak tersedia di database\n\n";
+        }
+        
+        foreach ($detailKriteria as $namaKriteria => $detail) {
+            $breakdown .= "• {$namaKriteria}:\n";
+            $breakdown .= "  - Nilai Produk: {$detail['nama_subkriteria']} ({$detail['nilai_alternatif']})";
+            
+            if ($detail['is_fallback'] ?? false) {
+                $breakdown .= " [ESTIMASI]";
+            }
+            $breakdown .= "\n";
+            
+            $breakdown .= "  - Bobot Kriteria: {$detail['bobot']}\n";
+            $breakdown .= "  - Jenis: {$detail['jenis']}\n";
+            
+            if (strtolower($detail['jenis']) === 'cost') {
+                $breakdown .= "  - Normalisasi (Cost): {$detail['min_nilai']} / {$detail['nilai_alternatif']} = " . round($detail['normalisasi'], 3) . "\n";
+                $breakdown .= "    (Semakin rendah nilai asli, semakin tinggi normalisasi - lebih baik)\n";
+            } else {
+                $breakdown .= "  - Normalisasi (Benefit): {$detail['nilai_alternatif']} / {$detail['max_nilai']} = " . round($detail['normalisasi'], 3) . "\n";
+                $breakdown .= "    (Semakin tinggi nilai asli, semakin tinggi normalisasi - lebih baik)\n";
+            }
+            
+            $breakdown .= "  - Skor: " . round($detail['normalisasi'], 3) . " × {$detail['bobot']} = " . round($detail['skor_kriteria'], 3) . "\n";
+            $breakdown .= "\n";
+        }
+        
+        $breakdown .= "Total Skor SAW: " . round($totalSkor, 3) . "\n";
+        
+        if ($hasFallback) {
+            $breakdown .= "\n🔧 Metode Fallback yang Digunakan:\n";
+            $breakdown .= "- Estimasi nilai berdasarkan preferensi user\n";
+            $breakdown .= "- Similarity matching untuk data yang ada\n";
+            $breakdown .= "- Nilai default untuk data yang tidak tersedia\n";
+        }
+        
+        $breakdown .= "\nCatatan Metode SAW:\n";
+        $breakdown .= "- Kriteria 'Cost': Harga - semakin rendah semakin baik\n";
+        $breakdown .= "- Kriteria 'Benefit': Jenis Acara, Jenis Pakaian, Warna, Lokasi, Cuaca - semakin tinggi semakin baik\n";
+        $breakdown .= "- Skor Final = Σ(Normalisasi × Bobot) untuk setiap kriteria\n";
+        $breakdown .= "- Semakin tinggi skor total, semakin baik alternatif tersebut";
+        
+        return $breakdown;
     }
 
-    // Simpan kuisioner user dan tampilkan hasil rekomendasi
     public function simpanKuisionerDanRekomendasi(Request $request)
     {
         $request->validate([
@@ -174,60 +461,31 @@ class HomeController extends Controller
             'cuaca' => 'required',
         ]);
 
-        $preferensi = $request->only([
-            'jenis_acara',
-            'harga',
-            'jenis_pakaian',
-            'warna',
-            'lokasi',
-            'cuaca'
-        ]);
-
+        $preferensi = $request->only(['jenis_acara', 'harga', 'jenis_pakaian', 'warna', 'lokasi', 'cuaca']);
         $jenis = $preferensi['jenis_pakaian'] ?? 'Dress';
 
-        // ⬇️ SIMPAN ke quiz_histories (tanpa login)
-        $skorAkhir = $this->getSkorAkhirByJenis($jenis, $preferensi, true);
-        $top3 = collect($skorAkhir)->take(3)->map(function ($alt) {
-            return [
-                'nama' => $alt['nama'],
-                'skor' => $alt['skor_total'],
-                'gambar' => $alt['gambar'] ?? null
-            ];
-        })->values()->all();
+        $skorAkhir = $this->getSkorAkhirByJenis($jenis, $preferensi);
 
-        $this->simpanRiwayatKuisioner($preferensi, $skorAkhir);
-
-        $alternatif = DataAlternatif::whereHas('penilaian.subkriteria', function ($query) use ($jenis) {
-            $query->where('nama_subkriteria', $jenis);
-        })->get();
-
-        $kriteria = Kriteria::with('subkriteria')->get();
-
-        return view('landingpage.rekomendasi', compact(
-            'alternatif',
-            'kriteria',
-            'jenis',
-            'skorAkhir',
-            'preferensi'
-        ));
-    }
-
-    private function simpanRiwayatKuisioner($preferensi, $hasilRekomendasi = [])
-    {
-        try {
-            QuizHistory::create([
-                'data_kuisioner' => json_encode($preferensi),
-                'hasil_rekomendasi' => json_encode($hasilRekomendasi),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        } catch (\Exception $e) {
+        // Ambil hasil rekomendasi dengan handling untuk fallback data
+        $hasilRekomendasi = [];
+        if (isset($skorAkhir['data']) && is_array($skorAkhir['data'])) {
+            $hasilRekomendasi = array_slice(array_column($skorAkhir['data'], 'nama'), 0, 4);
         }
-    }
 
-    public function getKriteria()
-    {
-        $kriteria = Kriteria::with('subkriteria')->get();
-        return response()->json($kriteria);
+        // Tambahkan informasi fallback ke hasil rekomendasi jika ada
+        $dataKuisioner = $request->except(['_token']);
+        if ($skorAkhir['has_fallback_data'] ?? false) {
+            $dataKuisioner['contains_fallback_data'] = true;
+            $dataKuisioner['fallback_message'] = 'Beberapa rekomendasi menggunakan estimasi karena data tidak lengkap di database';
+        }
+
+        QuizHistory::create([
+            'user_id' => auth()->id(),
+            'skor_akhir' => json_encode($skorAkhir),
+            'data_kuisioner' => json_encode($dataKuisioner),
+            'hasil_rekomendasi' => json_encode($hasilRekomendasi),
+        ]);
+        
+        return view('landingpage.rekomendasi', compact('skorAkhir', 'preferensi', 'jenis'));
     }
 }
