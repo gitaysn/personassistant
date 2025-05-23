@@ -12,6 +12,7 @@ use Illuminate\Support\Str;
 
 class HomeController extends Controller
 {
+     // Menampilkan halaman utama dengan berbagai jenis pakaian yang direkomendasikan
     public function index()
     {
         $skorAkhir = $this->getSkorAkhirByJenis('Dress');
@@ -32,12 +33,14 @@ class HomeController extends Controller
         ));
     }
 
+    // Masing-masing method berikut akan menampilkan halaman rekomendasi sesuai jenis pakaian
     public function dress() { return $this->showJenisPakaian('Dress'); }
     public function blouse() { return $this->showJenisPakaian('Blouse'); }
     public function cardigan() { return $this->showJenisPakaian('Cardigan'); }
     public function rok() { return $this->showJenisPakaian('Rok'); }
     public function celana() { return $this->showJenisPakaian('Celana'); }
 
+     // Method untuk menampilkan rekomendasi berdasarkan jenis pakaian dan preferensi user (jika ada)
     private function showJenisPakaian($jenis, $preferensi = [])
     {
         $skorAkhir = $this->getSkorAkhirByJenis($jenis, $preferensi);
@@ -57,105 +60,109 @@ class HomeController extends Controller
         ));
     }
 
+     // Method utama untuk menghitung skor SAW (Simple Additive Weighting) berdasarkan jenis dan preferensi
     private function getSkorAkhirByJenis($jenis, $preferensi = [], $withPreferensiBonus = false)
-{
-    $mapping = [
-        'jenis_acara' => 'Jenis Acara',
-        'harga' => 'Harga',
-        'jenis_pakaian' => 'Jenis Pakaian',
-        'warna' => 'Warna Pakaian',
-        'lokasi' => 'Lokasi Acara',
-        'cuaca' => 'Cuaca Acara',
-    ];
+    {
+        $mapping = [
+            'jenis_acara' => 'Jenis Acara',
+            'harga' => 'Harga',
+            'jenis_pakaian' => 'Jenis Pakaian',
+            'warna' => 'Warna Pakaian',
+            'lokasi' => 'Lokasi Acara',
+            'cuaca' => 'Cuaca Acara',
+        ];
 
-    $baseAlternatif = DataAlternatif::with(['penilaian.subkriteria.kriteria'])
-        ->whereHas('penilaian.subkriteria.kriteria', fn($q) => $q->where('nama_kriteria', 'Jenis Pakaian'))
-        ->whereHas('penilaian.subkriteria', fn($q) => $q->where('nama_subkriteria', $jenis))
-        ->get();
+        // Ambil semua alternatif dengan jenis pakaian tertentu
+        $baseAlternatif = DataAlternatif::with(['penilaian.subkriteria.kriteria'])
+            ->whereHas('penilaian.subkriteria.kriteria', fn($q) => $q->where('nama_kriteria', 'Jenis Pakaian'))
+            ->whereHas('penilaian.subkriteria', fn($q) => $q->where('nama_subkriteria', $jenis))
+            ->get();
 
-    if ($baseAlternatif->isEmpty()) return [];
+        if ($baseAlternatif->isEmpty()) return [];
 
-    $kriteria = Kriteria::with('subkriteria')->get();
+        $kriteria = Kriteria::with('subkriteria')->get();
 
-    // Ambil nilai preferensi user sebagai bobot pembanding
-    $userPreferensi = [];
-    foreach ($preferensi as $key => $val) {
-        $namaKriteria = $mapping[$key] ?? null;
-        if ($namaKriteria) {
-            $kriteriaModel = $kriteria->firstWhere('nama_kriteria', $namaKriteria);
-            if ($kriteriaModel) {
-                $sub = $kriteriaModel->subkriteria->firstWhere('nama_subkriteria', $val);
-                if ($sub) {
-                    $userPreferensi[$kriteriaModel->id] = $sub->nilai;
+        // Ambil nilai preferensi user sebagai bobot pembanding
+        $userPreferensi = [];
+        foreach ($preferensi as $key => $val) {
+            $namaKriteria = $mapping[$key] ?? null;
+            if ($namaKriteria) {
+                $kriteriaModel = $kriteria->firstWhere('nama_kriteria', $namaKriteria);
+                if ($kriteriaModel) {
+                    $sub = $kriteriaModel->subkriteria->firstWhere('nama_subkriteria', $val);
+                    if ($sub) {
+                        $userPreferensi[$kriteriaModel->id] = $sub->nilai;
+                    }
                 }
             }
         }
-    }
 
-    // Hitung nilai max dan min
-    $maxNilai = [];
-    $minNilai = [];
-    foreach ($kriteria as $i => $k) {
-        $nilai = $baseAlternatif->map(fn($alt) =>
-            $alt->penilaian->firstWhere('kriteria_id', $k->id)?->subkriteria->nilai
-        )->filter();
-        $maxNilai[$k->id] = $nilai->max() ?? 1;
-        $minNilai[$k->id] = $nilai->min() ?? 1;
-    }
-
-    // Hitung skor berdasarkan selisih preferensi user vs alternatif
-    $hasilSAW = $baseAlternatif->map(function ($alt) use ($kriteria, $maxNilai, $minNilai, $userPreferensi) {
-        $totalSkor = 0;
-        $detail = [];
-
-        foreach ($kriteria as $k) {
-            $pn = $alt->penilaian->firstWhere('kriteria_id', $k->id);
-            $nilaiAlt = $pn->subkriteria->nilai ?? 0;
-            $nilaiUser = $userPreferensi[$k->id] ?? 0;
-
-            if (strtolower($k->jenis) === 'cost') {
-                $normalAlt = $nilaiAlt > 0 ? $minNilai[$k->id] / $nilaiAlt : 0;
-                $normalUser = $nilaiUser > 0 ? $minNilai[$k->id] / $nilaiUser : 0;
-            } else {
-                $normalAlt = $maxNilai[$k->id] > 0 ? $nilaiAlt / $maxNilai[$k->id] : 0;
-                $normalUser = $maxNilai[$k->id] > 0 ? $nilaiUser / $maxNilai[$k->id] : 0;
-            }
-
-            $selisih = abs($normalAlt - $normalUser);
-            $bobot = round((1 - $selisih) * $k->bobot, 4); // semakin kecil selisih, semakin besar skor
-
-            $totalSkor += $bobot;
-
-            $detail[] = [
-                'kriteria' => $k->nama_kriteria,
-                'alt_val' => $nilaiAlt,
-                'user_val' => $nilaiUser,
-                'selisih' => $selisih,
-                'bobot_kriteria' => $k->bobot,
-                'skor_kriteria' => $bobot,
-            ];
+        // Hitung nilai max dan min
+        $maxNilai = [];
+        $minNilai = [];
+        foreach ($kriteria as $i => $k) {
+            $nilai = $baseAlternatif->map(fn($alt) =>
+                $alt->penilaian->firstWhere('kriteria_id', $k->id)?->subkriteria->nilai
+            )->filter();
+            $maxNilai[$k->id] = $nilai->max() ?? 1;
+            $minNilai[$k->id] = $nilai->min() ?? 1;
         }
 
-        return [
-            'id' => $alt->id,
-            'nama' => $alt->nama_alternatif,
-            'gambar' => $alt->gambar,
-            'skor_total' => round($totalSkor, 4),
-            'skor_saw' => round($totalSkor, 4), // supaya blade tidak error
-            'detail_normalisasi' => $detail
-        ];
-    });
+        // Hitung skor berdasarkan selisih preferensi user vs alternatif
+        $hasilSAW = $baseAlternatif->map(function ($alt) use ($kriteria, $maxNilai, $minNilai, $userPreferensi) {
+            $totalSkor = 0;
+            $detail = [];
 
-    return $hasilSAW->sortByDesc('skor_total')->values()->all();
-}
+            foreach ($kriteria as $k) {
+                $pn = $alt->penilaian->firstWhere('kriteria_id', $k->id);
+                $nilaiAlt = $pn->subkriteria->nilai ?? 0;
+                $nilaiUser = $userPreferensi[$k->id] ?? 0;
 
+                // Normalisasi berdasarkan jenis kriteria (benefit atau cost)
+                if (strtolower($k->jenis) === 'cost') {
+                    $normalAlt = $nilaiAlt > 0 ? $minNilai[$k->id] / $nilaiAlt : 0;
+                    $normalUser = $nilaiUser > 0 ? $minNilai[$k->id] / $nilaiUser : 0;
+                } else {
+                    $normalAlt = $maxNilai[$k->id] > 0 ? $nilaiAlt / $maxNilai[$k->id] : 0;
+                    $normalUser = $maxNilai[$k->id] > 0 ? $nilaiUser / $maxNilai[$k->id] : 0;
+                }
 
+                $selisih = abs($normalAlt - $normalUser);
+                $bobot = round((1 - $selisih) * $k->bobot, 4); // semakin kecil selisih, semakin besar skor
+
+                $totalSkor += $bobot;
+
+                $detail[] = [
+                    'kriteria' => $k->nama_kriteria,
+                    'alt_val' => $nilaiAlt,
+                    'user_val' => $nilaiUser,
+                    'selisih' => $selisih,
+                    'bobot_kriteria' => $k->bobot,
+                    'skor_kriteria' => $bobot,
+                ];
+            }
+
+            return [
+                'id' => $alt->id,
+                'nama' => $alt->nama_alternatif,
+                'gambar' => $alt->gambar,
+                'skor_total' => round($totalSkor, 4),
+                'skor_saw' => round($totalSkor, 4), // supaya blade tidak error
+                'detail_normalisasi' => $detail
+            ];
+        });
+
+        return $hasilSAW->sortByDesc('skor_total')->values()->all();
+    }
+
+     // Proses untuk menampilkan rekomendasi berdasarkan input jenis pakaian
     public function prosesRekomendasi(Request $request)
     {
         $jenisPakaian = $request->input('jenis_pakaian');
         return $this->showJenisPakaian($jenisPakaian);
     }
 
+    // Simpan kuisioner user dan tampilkan hasil rekomendasi
     public function simpanKuisionerDanRekomendasi(Request $request)
     {
         $request->validate([
@@ -177,10 +184,11 @@ class HomeController extends Controller
         ]);
 
         $jenis = $preferensi['jenis_pakaian'] ?? 'Dress';
+
+         // Hitung hasil rekomendasi berdasarkan preferensi
         $skorAkhir = $this->getSkorAkhirByJenis($jenis, $preferensi, true);
 
-        // ⬇️ SIMPAN ke quiz_histories (tanpa login)
-        $skorAkhir = $this->getSkorAkhirByJenis($jenis, $preferensi, true);
+         // Ambil 3 teratas untuk disimpan ke histori (opsional)
         $top3 = collect($skorAkhir)->take(3)->map(function ($alt) {
             return [
                 'nama' => $alt['nama'],
@@ -189,6 +197,7 @@ class HomeController extends Controller
             ];
         })->values()->all();
 
+        // Simpan ke tabel quiz_histories
         $this->simpanRiwayatKuisioner($preferensi, $skorAkhir);
 
         $alternatif = DataAlternatif::whereHas('penilaian.subkriteria', function ($query) use ($jenis) {
@@ -206,6 +215,7 @@ class HomeController extends Controller
         ));
     }
 
+     // Simpan data kuisioner dan hasil rekomendasi ke database (tabel quiz_histories)
     private function simpanRiwayatKuisioner($preferensi, $hasilRekomendasi = [])
     {
         try {
@@ -219,6 +229,7 @@ class HomeController extends Controller
         }
     }
 
+    // Ambil semua kriteria beserta subkriteria-nya (untuk front-end)
     public function getKriteria()
     {
         $kriteria = Kriteria::with('subkriteria')->get();
