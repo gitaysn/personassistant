@@ -31,9 +31,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
 
-Route::get('/rekomendasi', [HomeController::class, 'rekomendasi'])->name('rekomendasi');
-
 Route::post('/proses-rekomendasi', [HomeController::class, 'simpankuisionerdanrekomendasi'])->name('proses.rekomendasi');
+
 
 // Jika user sudah login, arahkan ke dashboard
 Route::get('/dashboard', function () {
