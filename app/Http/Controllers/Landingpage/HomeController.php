@@ -153,248 +153,282 @@ class HomeController extends Controller
     }
 
     private function getSkorAkhirByJenis($jenis, $preferensi = [])
-    {
-        $mapping = [
-            'jenis_acara' => 'Jenis Acara',
-            'harga' => 'Harga',
-            'jenis_pakaian' => 'Jenis Pakaian',
-            'warna' => 'Warna Pakaian',
-            'lokasi' => 'Lokasi Acara',
-            'cuaca' => 'Cuaca Acara',
-        ];
+{
+    $mapping = [
+        'jenis_acara' => 'Jenis Acara',
+        'harga' => 'Harga',
+        'jenis_pakaian' => 'Jenis Pakaian',
+        'warna' => 'Warna Pakaian',
+        'lokasi' => 'Lokasi Acara',
+        'cuaca' => 'Cuaca Acara',
+    ];
 
-        // Ambil semua alternatif untuk jenis pakaian tertentu
-        $alternatif = DataAlternatif::with(['penilaian.subkriteria.kriteria'])
-            ->whereHas('penilaian.subkriteria.kriteria', fn($q) => $q->where('nama_kriteria', 'Jenis Pakaian'))
-            ->whereHas('penilaian.subkriteria', fn($q) => $q->where('nama_subkriteria', $jenis))
-            ->get();
+    // Ambil semua alternatif untuk jenis pakaian tertentu
+    $alternatif = DataAlternatif::with(['penilaian.subkriteria.kriteria'])
+        ->whereHas('penilaian.subkriteria.kriteria', fn($q) => $q->where('nama_kriteria', 'Jenis Pakaian'))
+        ->whereHas('penilaian.subkriteria', fn($q) => $q->where('nama_subkriteria', $jenis))
+        ->get();
 
-        // FALLBACK: Jika tidak ada alternatif yang sesuai dengan jenis pakaian dari preferensi
+    // FALLBACK: Jika tidak ada alternatif yang sesuai dengan jenis pakaian dari preferensi
+    if ($alternatif->isEmpty()) {
+        \Log::warning("Tidak ada alternatif untuk jenis pakaian: {$jenis}");
+        
+        // Ambil semua alternatif tanpa filter jenis pakaian spesifik
+        $alternatif = DataAlternatif::with(['penilaian.subkriteria.kriteria'])->get();
+        
         if ($alternatif->isEmpty()) {
-            \Log::warning("Tidak ada alternatif untuk jenis pakaian: {$jenis}");
-            
-            // Ambil semua alternatif tanpa filter jenis pakaian spesifik
-            $alternatif = DataAlternatif::with(['penilaian.subkriteria.kriteria'])->get();
-            
-            if ($alternatif->isEmpty()) {
-                return [
-                    'data' => [],
-                    'message' => 'Tidak ada data alternatif dalam database',
-                    'fallback' => true
-                ];
+            return [
+                'data' => [],
+                'message' => 'Tidak ada data alternatif dalam database',
+                'fallback' => true
+            ];
+        }
+    }
+
+    $kriteria = Kriteria::with('subkriteria')->get();
+
+    // Hitung nilai max dan min yang konsisten untuk normalisasi SAW
+    $maxNilai = [];
+    $minNilai = [];
+    
+    foreach ($kriteria as $k) {
+        $nilaiKriteria = [];
+        
+        // Untuk SEMUA kriteria, ambil nilai dari alternatif yang sedang diproses
+        foreach ($alternatif as $alt) {
+            $penilaian = $alt->penilaian->where('kriteria_id', $k->id)->first();
+            if ($penilaian && $penilaian->subkriteria && $penilaian->subkriteria->nilai > 0) {
+                $nilaiKriteria[] = $penilaian->subkriteria->nilai;
             }
         }
-
-        $kriteria = Kriteria::with('subkriteria')->get();
-
-        // Hitung nilai max dan min yang konsisten untuk normalisasi SAW
-        $maxNilai = [];
-        $minNilai = [];
         
-        foreach ($kriteria as $k) {
-            $nilaiKriteria = [];
-            
-            if ($k->nama_kriteria === 'Jenis Pakaian') {
-                // Untuk kriteria Jenis Pakaian, max/min dari subkriteria yang tersedia
-                $subkriteriaTarget = $k->subkriteria->where('nama_subkriteria', $jenis);
-                if ($subkriteriaTarget->isNotEmpty()) {
-                    $nilaiKriteria = $subkriteriaTarget->pluck('nilai')
-                                                   ->filter(function($val) { return $val > 0; })
-                                                   ->toArray();
-                } else {
-                    // Fallback: gunakan semua subkriteria jenis pakaian
-                    $nilaiKriteria = $k->subkriteria->pluck('nilai')
-                                                   ->filter(function($val) { return $val > 0; })
-                                                   ->toArray();
-                }
+        if (!empty($nilaiKriteria)) {
+            $maxNilai[$k->id] = max($nilaiKriteria);
+            $minNilai[$k->id] = min($nilaiKriteria);
+        } else {
+            // Fallback jika tidak ada nilai valid - ambil dari semua subkriteria untuk kriteria ini
+            $subkriteriaNilai = $k->subkriteria->pluck('nilai')
+                                              ->filter(function($val) { return $val > 0; })
+                                              ->toArray();
+            if (!empty($subkriteriaNilai)) {
+                $maxNilai[$k->id] = max($subkriteriaNilai);
+                $minNilai[$k->id] = min($subkriteriaNilai);
             } else {
-                // Untuk kriteria lainnya, ambil dari SEMUA alternatif yang ada
-                foreach ($alternatif as $alt) {
-                    $penilaian = $alt->penilaian->where('kriteria_id', $k->id)->first();
-                    if ($penilaian && $penilaian->subkriteria && $penilaian->subkriteria->nilai > 0) {
-                        $nilaiKriteria[] = $penilaian->subkriteria->nilai;
-                    }
-                }
-            }
-            
-            if (!empty($nilaiKriteria)) {
-                $maxNilai[$k->id] = max($nilaiKriteria);
-                $minNilai[$k->id] = min($nilaiKriteria);
-            } else {
-                // Fallback jika tidak ada nilai valid
                 $maxNilai[$k->id] = 100; // Nilai default
                 $minNilai[$k->id] = 1;
             }
-            
-            \Log::info("=== DEBUG KRITERIA: {$k->nama_kriteria} ===");
-            \Log::info("Jenis Pakaian: {$jenis}");
-            \Log::info("Nilai ditemukan: " . json_encode($nilaiKriteria));
-            \Log::info("Max: {$maxNilai[$k->id]}, Min: {$minNilai[$k->id]}");
         }
+        
+        \Log::info("=== DEBUG KRITERIA: {$k->nama_kriteria} ===");
+        \Log::info("Jenis Pakaian: {$jenis}");
+        \Log::info("Nilai ditemukan: " . json_encode($nilaiKriteria));
+        \Log::info("Max: {$maxNilai[$k->id]}, Min: {$minNilai[$k->id]}");
+    }
 
-        // Buat matriks keputusan untuk ditampilkan
-        $matriksKeputusan = [];
-        $matriksNormalisasi = [];
-        $matriksTerbobot = [];
+    // Buat matriks keputusan untuk ditampilkan
+    $matriksKeputusan = [];
+    $matriksNormalisasi = [];
+    $matriksTerbobot = [];
 
-        $hasil = $alternatif->map(function ($alt) use ($kriteria, $maxNilai, $minNilai, $preferensi, $mapping, &$matriksKeputusan, &$matriksNormalisasi, &$matriksTerbobot) {
-            $totalSkor = 0;
-            $detailSkor = [];
-            $detailKriteria = [];
-            $nilaiKeputusan = [];
-            $nilaiNormalisasi = [];
-            $nilaiTerbobot = [];
-            $isUsingFallback = false;
-            
-            \Log::info("=== PERHITUNGAN UNTUK: {$alt->nama_alternatif} ===");
-            
-            foreach ($kriteria as $k) {
-                $penilaian = $alt->penilaian->where('kriteria_id', $k->id)->first();
-                $nilaiAlt = $penilaian?->subkriteria->nilai ?? 0;
-                $namaSubkriteriaAlt = $penilaian?->subkriteria->nama_subkriteria ?? 'Tidak ada';
+    $hasil = $alternatif->map(function ($alt) use ($kriteria, $maxNilai, $minNilai, $preferensi, $mapping, &$matriksKeputusan, &$matriksNormalisasi, &$matriksTerbobot) {
+        $totalSkor = 0;
+        $detailSkor = [];
+        $detailKriteria = [];
+        $nilaiKeputusan = [];
+        $nilaiNormalisasi = [];
+        $nilaiTerbobot = [];
+        $isUsingFallback = false;
+        
+        \Log::info("=== PERHITUNGAN UNTUK: {$alt->nama_alternatif} ===");
+        
+        foreach ($kriteria as $k) {
+            $penilaian = $alt->penilaian->where('kriteria_id', $k->id)->first();
+            $nilaiAsliDariKuesioner = $penilaian?->subkriteria->nilai ?? 0; // NILAI ASLI untuk matriks keputusan
+            $namaSubkriteriaAlt = $penilaian?->subkriteria->nama_subkriteria ?? 'Tidak ada';
 
-                // FALLBACK: Jika tidak ada penilaian dari database, gunakan estimasi berdasarkan preferensi
-                if (!$penilaian || $nilaiAlt == 0) {
-                    $isUsingFallback = true;
-                    $preferensiKey = array_search($k->nama_kriteria, $mapping);
-                    
-                    if ($preferensiKey && isset($preferensi[$preferensiKey])) {
-                        // Estimasi nilai berdasarkan preferensi user
-                        $nilaiAlt = $this->getNilaiDefaultFromPreferensi($k->nama_kriteria, $preferensi[$preferensiKey], $maxNilai[$k->id]);
-                        $namaSubkriteriaAlt = $preferensi[$preferensiKey] . ' (estimasi)';
-                        
-                        \Log::info("FALLBACK - Menggunakan estimasi untuk {$k->nama_kriteria}: {$nilaiAlt}");
-                    } else {
-                        // Jika tidak ada preferensi, gunakan nilai tengah
-                        $nilaiAlt = ($maxNilai[$k->id] + $minNilai[$k->id]) / 2;
-                        $namaSubkriteriaAlt = 'Nilai default (tengah)';
-                        
-                        \Log::info("FALLBACK - Menggunakan nilai default untuk {$k->nama_kriteria}: {$nilaiAlt}");
-                    }
-                } else {
-                    // Jika ada data dari database, cek similarity dengan preferensi user
-                    $preferensiKey = array_search($k->nama_kriteria, $mapping);
-                    if ($preferensiKey && isset($preferensi[$preferensiKey])) {
-                        $similarityScore = $this->hitungSimilarityScore($preferensi[$preferensiKey], $namaSubkriteriaAlt, $k->nama_kriteria);
-                        
-                        // Boost nilai berdasarkan similarity dengan preferensi user
-                        $nilaiAlt = $nilaiAlt * (0.5 + 0.5 * $similarityScore);
-                        
-                        \Log::info("SIMILARITY BOOST - {$k->nama_kriteria}: {$preferensi[$preferensiKey]} vs {$namaSubkriteriaAlt} = {$similarityScore}");
-                    }
-                }
+            // NILAI UNTUK PERHITUNGAN SAW (bisa dimodifikasi dengan fallback/similarity)
+            $nilaiUntukPerhitungan = $nilaiAsliDariKuesioner;
 
-                // Simpan untuk matriks keputusan
-                $nilaiKeputusan[$k->nama_kriteria] = $nilaiAlt;
-
-                // Normalisasi SAW yang benar - TANPA PEMBULATAN
-                if (strtolower($k->jenis) === 'cost') {
-                    // KRITERIA COST (misal: Harga) - semakin rendah semakin baik
-                    if ($nilaiAlt > 0) {
-                        $normalisasi = $minNilai[$k->id] / $nilaiAlt;
-                    } else {
-                        $normalisasi = 0;
-                    }
-                } else {
-                    // KRITERIA BENEFIT - semakin tinggi semakin baik  
-                    if ($maxNilai[$k->id] > 0) {
-                        $normalisasi = $nilaiAlt / $maxNilai[$k->id];
-                    } else {
-                        $normalisasi = 0;
-                    }
-                }
-
-                // Pastikan normalisasi dalam rentang [0,1]
-                $normalisasi = max(0, min(1, $normalisasi));
-
-                // Skor kriteria = normalisasi × bobot
-                $skorKriteria = $normalisasi * $k->bobot;
-                $totalSkor += $skorKriteria;
-
-                // Simpan untuk matriks
-                $nilaiNormalisasi[$k->nama_kriteria] = $normalisasi;
-                $nilaiTerbobot[$k->nama_kriteria] = $skorKriteria;
-
-                // Simpan detail untuk setiap kriteria
-                $detailSkor[$k->nama_kriteria] = $skorKriteria;
-                $detailKriteria[$k->nama_kriteria] = [
-                    'nilai_alternatif' => $nilaiAlt,
-                    'nama_subkriteria' => $namaSubkriteriaAlt,
-                    'bobot' => $k->bobot,
-                    'max_nilai' => $maxNilai[$k->id],
-                    'min_nilai' => $minNilai[$k->id],
-                    'normalisasi' => $normalisasi,
-                    'skor_kriteria' => $skorKriteria,
-                    'jenis' => $k->jenis,
-                    'is_fallback' => $isUsingFallback
-                ];
+            // FALLBACK: Jika tidak ada penilaian dari database, gunakan estimasi berdasarkan preferensi
+            if (!$penilaian || $nilaiAsliDariKuesioner == 0) {
+                $isUsingFallback = true;
+                $preferensiKey = array_search($k->nama_kriteria, $mapping);
                 
-                \Log::info("Kriteria: {$k->nama_kriteria}");
-                \Log::info("Nilai Alt: {$nilaiAlt}, Subkriteria: {$namaSubkriteriaAlt}");
-                \Log::info("Normalisasi: {$normalisasi}, Skor: {$skorKriteria}");
-                \Log::info("---");
+                if ($preferensiKey && isset($preferensi[$preferensiKey])) {
+                    // Estimasi nilai berdasarkan preferensi user
+                    $nilaiUntukPerhitungan = $this->getNilaiDefaultFromPreferensi($k->nama_kriteria, $preferensi[$preferensiKey], $maxNilai[$k->id]);
+                    $nilaiAsliDariKuesioner = $nilaiUntukPerhitungan; // Untuk matriks keputusan juga menggunakan estimasi
+                    $namaSubkriteriaAlt = $preferensi[$preferensiKey] . ' (estimasi)';
+                    
+                    \Log::info("FALLBACK - Menggunakan estimasi untuk {$k->nama_kriteria}: {$nilaiUntukPerhitungan}");
+                } else {
+                    // Jika tidak ada preferensi, gunakan nilai tengah
+                    $nilaiUntukPerhitungan = ($maxNilai[$k->id] + $minNilai[$k->id]) / 2;
+                    $nilaiAsliDariKuesioner = $nilaiUntukPerhitungan; // Untuk matriks keputusan juga
+                    $namaSubkriteriaAlt = 'Nilai default (tengah)';
+                    
+                    \Log::info("FALLBACK - Menggunakan nilai default untuk {$k->nama_kriteria}: {$nilaiUntukPerhitungan}");
+                }
+            } else {
+                // Jika ada data dari database, gunakan nilai asli untuk matriks keputusan
+                // Tapi untuk perhitungan SAW, bisa ditingkatkan dengan similarity
+                $preferensiKey = array_search($k->nama_kriteria, $mapping);
+                if ($preferensiKey && isset($preferensi[$preferensiKey])) {
+                    $similarityScore = $this->hitungSimilarityScore($preferensi[$preferensiKey], $namaSubkriteriaAlt, $k->nama_kriteria);
+                    
+                    // Boost nilai HANYA untuk perhitungan, BUKAN untuk matriks keputusan
+                    $nilaiUntukPerhitungan = $nilaiAsliDariKuesioner * (0.5 + 0.5 * $similarityScore);
+                    
+                    \Log::info("SIMILARITY BOOST - {$k->nama_kriteria}: {$preferensi[$preferensiKey]} vs {$namaSubkriteriaAlt} = {$similarityScore}");
+                    \Log::info("Nilai asli: {$nilaiAsliDariKuesioner}, Nilai untuk perhitungan: {$nilaiUntukPerhitungan}");
+                }
             }
 
-            // Simpan ke matriks
-            $matriksKeputusan[$alt->nama_alternatif] = $nilaiKeputusan;
-            $matriksNormalisasi[$alt->nama_alternatif] = array_map(function($val) {
-                return round($val, 3);
-            }, $nilaiNormalisasi);
-            $matriksTerbobot[$alt->nama_alternatif] = array_map(function($val) {
-                return round($val, 3);
-            }, $nilaiTerbobot);
+            // MATRIKS KEPUTUSAN = NILAI ASLI DARI DATABASE (TANPA MODIFIKASI APAPUN)
+            // Kecuali jika memang tidak ada data sama sekali (fallback)
+            $nilaiKeputusan[$k->nama_kriteria] = $nilaiAsliDariKuesioner;
 
-            $finalScore = round($totalSkor, 3);
+            // PERBAIKAN NORMALISASI SAW - gunakan nilai asli untuk matriks normalisasi
+            // Normalisasi harus konsisten menggunakan nilai yang sama dengan matriks keputusan
+            $nilaiUntukNormalisasi = $nilaiAsliDariKuesioner;
             
-            \Log::info("TOTAL SKOR FINAL {$alt->nama_alternatif}: {$finalScore}");
-            \Log::info("================================");
+            // Jika nilai kosong (fallback), gunakan nilai estimasi
+            if ($nilaiUntukNormalisasi == 0) {
+                $nilaiUntukNormalisasi = $nilaiUntukPerhitungan;
+            }
+            
+            if (strtolower($k->jenis) === 'cost') {
+                // KRITERIA COST (misal: Harga) - semakin rendah semakin baik
+                if ($nilaiUntukNormalisasi > 0 && $minNilai[$k->id] > 0) {
+                    $normalisasi = $minNilai[$k->id] / $nilaiUntukNormalisasi;
+                } else {
+                    $normalisasi = 0;
+                }
+            } else {
+                // KRITERIA BENEFIT - semakin tinggi semakin baik  
+                if ($maxNilai[$k->id] > 0 && $nilaiUntukNormalisasi > 0) {
+                    $normalisasi = $nilaiUntukNormalisasi / $maxNilai[$k->id];
+                } else {
+                    $normalisasi = 0;
+                }
+            }
 
-            return [
-                'id' => $alt->id,
-                'nama' => $alt->nama_alternatif,
-                'gambar' => $alt->gambar,
-                'skor_total' => $finalScore,
-                'detail_skor' => array_map(function($val) {
-                    return round($val, 3);
-                }, $detailSkor),
-                'detail_kriteria' => array_map(function($detail) {
-                    return [
-                        'nilai_alternatif' => $detail['nilai_alternatif'],
-                        'nama_subkriteria' => $detail['nama_subkriteria'],
-                        'bobot' => $detail['bobot'],
-                        'max_nilai' => $detail['max_nilai'],
-                        'min_nilai' => $detail['min_nilai'],
-                        'normalisasi' => round($detail['normalisasi'], 3),
-                        'skor_kriteria' => round($detail['skor_kriteria'], 3),
-                        'jenis' => $detail['jenis'],
-                        'is_fallback' => $detail['is_fallback'] ?? false
-                    ];
-                }, $detailKriteria),
-                'breakdown' => $this->generateBreakdownText($detailKriteria, $totalSkor, $isUsingFallback),
-                'has_fallback' => $isUsingFallback
+            // Pastikan normalisasi dalam rentang [0,1]
+            $normalisasi = max(0, min(1, $normalisasi));
+
+            // SKOR KRITERIA menggunakan nilai yang sudah di-boost untuk perhitungan final
+            $nilaiUntukSkor = $nilaiUntukPerhitungan;
+            
+            if (strtolower($k->jenis) === 'cost') {
+                if ($nilaiUntukSkor > 0 && $minNilai[$k->id] > 0) {
+                    $normalisasiSkor = $minNilai[$k->id] / $nilaiUntukSkor;
+                } else {
+                    $normalisasiSkor = 0;
+                }
+            } else {
+                if ($maxNilai[$k->id] > 0 && $nilaiUntukSkor > 0) {
+                    $normalisasiSkor = $nilaiUntukSkor / $maxNilai[$k->id];
+                } else {
+                    $normalisasiSkor = 0;
+                }
+            }
+            
+            $normalisasiSkor = max(0, min(1, $normalisasiSkor));
+            $skorKriteria = $normalisasiSkor * $k->bobot;
+            $totalSkor += $skorKriteria;
+
+            // Simpan untuk matriks - NORMALISASI BERDASARKAN NILAI ASLI
+            $nilaiNormalisasi[$k->nama_kriteria] = $normalisasi;
+            $nilaiTerbobot[$k->nama_kriteria] = $normalisasi * $k->bobot; // Terbobot juga pakai normalisasi nilai asli
+
+            // Simpan detail untuk setiap kriteria
+            $detailSkor[$k->nama_kriteria] = $skorKriteria; // Skor final tetap pakai yang di-boost
+            $detailKriteria[$k->nama_kriteria] = [
+                'nilai_alternatif' => $nilaiAsliDariKuesioner, // Tampilkan nilai asli
+                'nilai_perhitungan' => $nilaiUntukPerhitungan, // Nilai yang dipakai untuk hitung
+                'nama_subkriteria' => $namaSubkriteriaAlt,
+                'bobot' => $k->bobot,
+                'max_nilai' => $maxNilai[$k->id],
+                'min_nilai' => $minNilai[$k->id],
+                'normalisasi' => $normalisasi, // Normalisasi berdasarkan nilai asli
+                'normalisasi_skor' => $normalisasiSkor, // Normalisasi untuk skor (yang di-boost)
+                'skor_kriteria' => $skorKriteria,
+                'jenis' => $k->jenis,
+                'is_fallback' => $isUsingFallback
             ];
-        })->sortByDesc('skor_total')->take(4)->values();
+            
+            \Log::info("Kriteria: {$k->nama_kriteria}");
+            \Log::info("Nilai Asli (Matriks): {$nilaiAsliDariKuesioner}");
+            \Log::info("Nilai Perhitungan: {$nilaiUntukPerhitungan}");
+            \Log::info("Subkriteria: {$namaSubkriteriaAlt}");
+            \Log::info("Normalisasi Matriks: {$normalisasi}");
+            \Log::info("Normalisasi Skor: {$normalisasiSkor}");
+            \Log::info("Skor: {$skorKriteria}");
+            \Log::info("---");
+        }
 
-        $hasil = $hasil->all();
+        // Simpan ke matriks - NILAI ASLI untuk keputusan
+        $matriksKeputusan[$alt->nama_alternatif] = $nilaiKeputusan;
+        $matriksNormalisasi[$alt->nama_alternatif] = array_map(function($val) {
+            return round($val, 3);
+        }, $nilaiNormalisasi);
+        $matriksTerbobot[$alt->nama_alternatif] = array_map(function($val) {
+            return round($val, 3);
+        }, $nilaiTerbobot);
+
+        $finalScore = round($totalSkor, 3);
         
+        \Log::info("TOTAL SKOR FINAL {$alt->nama_alternatif}: {$finalScore}");
+        \Log::info("================================");
+
         return [
-            'data' => $hasil,
-            'matriks_keputusan' => $matriksKeputusan,
-            'matriks_normalisasi' => $matriksNormalisasi,
-            'matriks_terbobot' => $matriksTerbobot,
-            'info_kriteria' => $kriteria->map(function($k) use ($maxNilai, $minNilai) {
+            'id' => $alt->id,
+            'nama' => $alt->nama_alternatif,
+            'gambar' => $alt->gambar,
+            'skor_total' => $finalScore,
+            'detail_skor' => array_map(function($val) {
+                return round($val, 3);
+            }, $detailSkor),
+            'detail_kriteria' => array_map(function($detail) {
                 return [
-                    'nama' => $k->nama_kriteria,
-                    'bobot' => $k->bobot,
-                    'jenis' => $k->jenis,
-                    'max_nilai' => $maxNilai[$k->id],
-                    'min_nilai' => $minNilai[$k->id]
+                    'nilai_alternatif' => $detail['nilai_alternatif'], // Nilai asli
+                    'nilai_perhitungan' => $detail['nilai_perhitungan'], // Nilai yang dipakai hitung
+                    'nama_subkriteria' => $detail['nama_subkriteria'],
+                    'bobot' => $detail['bobot'],
+                    'max_nilai' => $detail['max_nilai'],
+                    'min_nilai' => $detail['min_nilai'],
+                    'normalisasi' => round($detail['normalisasi'], 3),
+                    'normalisasi_skor' => round($detail['normalisasi_skor'], 3),
+                    'skor_kriteria' => round($detail['skor_kriteria'], 3),
+                    'jenis' => $detail['jenis'],
+                    'is_fallback' => $detail['is_fallback'] ?? false
                 ];
-            })->keyBy('nama')->all(),
-            'has_fallback_data' => collect($hasil)->contains('has_fallback', true),
-            'preferensi_applied' => !empty($preferensi)
+            }, $detailKriteria),
+            'breakdown' => $this->generateBreakdownText($detailKriteria, $totalSkor, $isUsingFallback),
+            'has_fallback' => $isUsingFallback
         ];
-    }
+    })->sortByDesc('skor_total')->take(4)->values();
+
+    $hasil = $hasil->all();
+    
+    return [
+        'data' => $hasil,
+        'matriks_keputusan' => $matriksKeputusan,
+        'matriks_normalisasi' => $matriksNormalisasi,
+        'matriks_terbobot' => $matriksTerbobot,
+        'info_kriteria' => $kriteria->map(function($k) use ($maxNilai, $minNilai) {
+            return [
+                'nama' => $k->nama_kriteria,
+                'bobot' => $k->bobot,
+                'jenis' => $k->jenis,
+                'max_nilai' => $maxNilai[$k->id],
+                'min_nilai' => $minNilai[$k->id]
+            ];
+        })->keyBy('nama')->all(),
+        'has_fallback_data' => collect($hasil)->contains('has_fallback', true),
+        'preferensi_applied' => !empty($preferensi)
+    ];
+}
 
     /**
      * Generate breakdown text untuk menjelaskan perhitungan skor SAW

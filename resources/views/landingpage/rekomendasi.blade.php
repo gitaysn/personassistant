@@ -300,464 +300,432 @@
 
     <script>
         // Data untuk modal dan matriks - Handle struktur data yang baru
-        const skorAkhirData = @json($skorAkhir ?? []);
-        // FIXED: Tampilkan semua data untuk JavaScript juga
-        const detailData = skorAkhirData.data ? skorAkhirData.data : @json($skorAkhir ?? []);
-        const matriksKeputusan = skorAkhirData.matriks_keputusan || {};
-        const matriksNormalisasi = skorAkhirData.matriks_normalisasi || {};
-        const matriksTerbobot = skorAkhirData.matriks_terbobot || {};
-        const infoKriteria = skorAkhirData.info_kriteria || {};
+const skorAkhirData = @json($skorAkhir ?? []);
+// FIXED: Tampilkan semua data untuk JavaScript juga
+const detailData = skorAkhirData.data ? skorAkhirData.data : @json($skorAkhir ?? []);
+const matriksKeputusan = skorAkhirData.matriks_keputusan || {};
+const matriksNormalisasi = skorAkhirData.matriks_normalisasi || {};
+const matriksTerbobot = skorAkhirData.matriks_terbobot || {};
+const infoKriteria = skorAkhirData.info_kriteria || {};
 
-        // Toggle tampilan matriks
-        function toggleMatriks() {
-            const section = document.getElementById('matriksSection');
-            if (section.classList.contains('hidden')) {
-                section.classList.remove('hidden');
-                initializeMatriks();
-            } else {
-                section.classList.add('hidden');
-            }
+// Helper function untuk membersihkan dan memformat angka
+function formatCleanNumber(value, type = 'auto') {
+    if (value === null || value === undefined) return '0';
+    
+    const num = parseFloat(value);
+    
+    // Untuk matriks keputusan - ini adalah nilai ASLI dari kuesioner user
+    if (type === 'keputusan') {
+        // Nilai dari kuesioner biasanya berupa integer (1,2,3,4,5) atau nilai sederhana
+        // PENTING: Tampilkan sebagai integer jika memang integer
+        if (Number.isInteger(num)) {
+            return num.toString();
         }
+        // Jika memang desimal dari kuesioner (rare case), tampilkan maksimal 1 desimal
+        if (Math.abs(num - Math.round(num)) < 0.1) {
+            return Math.round(num).toString();
+        }
+        return parseFloat(num.toFixed(1)).toString();
+    }
+    
+    // Untuk normalisasi dan terbobot, gunakan 4 desimal
+    if (type === 'normalisasi' || type === 'terbobot') {
+        return num.toFixed(4);
+    }
+    
+    // Auto detect - jika hampir integer, tampilkan sebagai integer
+    if (Math.abs(num - Math.round(num)) < 0.0001) {
+        return Math.round(num).toString();
+    }
+    
+    // Jika desimal, batasi ke 4 digit
+    return parseFloat(num.toFixed(4)).toString();
+}
 
-        // Initialize matriks data
-        function initializeMatriks() {
-            // Populate info kriteria dengan layout horizontal
-            let infoHtml = '';
-            Object.values(infoKriteria).forEach(kriteria => {
-                const jenisColor = kriteria.jenis.toLowerCase() === 'cost' ? 'text-red-600' : 'text-green-600';
-                const jenisIcon = kriteria.jenis.toLowerCase() === 'cost' ? '📉' : '📈';
-                infoHtml += `
-                    <div class="flex-shrink-0 bg-white p-4 rounded-lg border shadow-sm min-w-[200px]">
-                        <div class="flex items-center gap-2 mb-2">
-                            <span class="text-lg">${jenisIcon}</span>
-                            <div class="font-semibold text-gray-800 text-sm">${kriteria.nama}</div>
-                        </div>
-                        <div class="space-y-1 text-xs">
+// Debug function untuk melihat data mentah
+function debugMatriksData() {
+    console.log('=== DEBUG MATRIKS DATA ===');
+    console.log('matriksKeputusan:', matriksKeputusan);
+    console.log('Sample data types:');
+    if (Object.keys(matriksKeputusan).length > 0) {
+        const firstAlternatif = Object.keys(matriksKeputusan)[0];
+        const firstData = matriksKeputusan[firstAlternatif];
+        Object.entries(firstData).forEach(([key, value]) => {
+            console.log(`${key}: ${value} (type: ${typeof value}, isInteger: ${Number.isInteger(parseFloat(value))})`);
+        });
+    }
+    console.log('========================');
+}
+
+// Toggle tampilan matriks
+function toggleMatriks() {
+    const section = document.getElementById('matriksSection');
+    if (section.classList.contains('hidden')) {
+        section.classList.remove('hidden');
+        initializeMatriks();
+    } else {
+        section.classList.add('hidden');
+    }
+}
+
+// Initialize matriks data
+function initializeMatriks() {
+    // Debug data untuk troubleshooting
+    debugMatriksData();
+    
+    // Populate info kriteria dengan layout horizontal
+    let infoHtml = '';
+    Object.values(infoKriteria).forEach(kriteria => {
+        const jenisColor = kriteria.jenis.toLowerCase() === 'cost' ? 'text-red-600' : 'text-green-600';
+        const jenisIcon = kriteria.jenis.toLowerCase() === 'cost' ? '📉' : '📈';
+        infoHtml += `
+            <div class="flex-shrink-0 bg-white p-4 rounded-lg border shadow-sm min-w-[200px]">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="text-lg">${jenisIcon}</span>
+                    <div class="font-semibold text-gray-800 text-sm">${kriteria.nama}</div>
+                </div>
+                <div class="space-y-1 text-xs">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Bobot:</span>
+                        <span class="font-medium text-blue-600">${formatCleanNumber(kriteria.bobot)}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Jenis:</span>
+                        <span class="font-medium ${jenisColor}">${kriteria.jenis}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Max:</span>
+                        <span class="font-medium">${formatCleanNumber(kriteria.max_nilai)}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Min:</span>
+                        <span class="font-medium">${formatCleanNumber(kriteria.min_nilai)}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    document.getElementById('infoKriteria').innerHTML = infoHtml;
+
+    // Build matriks tables
+    buildMatriksTable('keputusan', matriksKeputusan);
+    buildMatriksTable('normalisasi', matriksNormalisasi);
+    buildMatriksTable('terbobot', matriksTerbobot);
+    
+    // Build ranking
+    buildRanking();
+}
+
+// Build matriks table
+function buildMatriksTable(type, data) {
+    if (Object.keys(data).length === 0) return;
+
+    const kriteriaNames = Object.keys(infoKriteria);
+    
+    // Build header
+    let headerHtml = '<th class="border border-gray-300 px-3 py-2 font-medium">Alternatif</th>';
+    kriteriaNames.forEach(kriteria => {
+        const jenisIcon = infoKriteria[kriteria].jenis.toLowerCase() === 'cost' ? '📉' : '📈';
+        const bobotFormatted = formatCleanNumber(infoKriteria[kriteria].bobot);
+        headerHtml += `<th class="border border-gray-300 px-3 py-2 font-medium text-center">
+            ${kriteria} ${jenisIcon}<br>
+            <span class="text-xs font-normal">(${bobotFormatted})</span>
+        </th>`;
+    });
+    
+    // Find the table header (first occurrence in each table)
+    const tables = document.querySelectorAll(`#matriks${type.charAt(0).toUpperCase() + type.slice(1)} table thead tr`);
+    if (tables.length > 0) {
+        tables[0].innerHTML = headerHtml;
+    }
+
+    // Build body
+    let bodyHtml = '';
+    Object.entries(data).forEach(([alternatif, nilai]) => {
+        bodyHtml += `<tr class="hover:bg-gray-50">
+            <td class="border border-gray-300 px-3 py-2 font-medium">${alternatif}</td>`;
+        
+        kriteriaNames.forEach(kriteria => {
+            const cellValue = nilai[kriteria] || 0;
+            const formattedValue = formatCleanNumber(cellValue, type);
+            let cellClass = '';
+            
+            // Color coding hanya untuk normalisasi dan terbobot
+            if (type === 'normalisasi' || type === 'terbobot') {
+                const numValue = parseFloat(cellValue);
+                if (numValue >= 0.8) cellClass = 'bg-green-100 text-green-800';
+                else if (numValue >= 0.6) cellClass = 'bg-blue-100 text-blue-800';
+                else if (numValue >= 0.4) cellClass = 'bg-yellow-100 text-yellow-800';
+                else cellClass = 'bg-red-100 text-red-800';
+            }
+            
+            // Untuk matriks keputusan, jangan ada color coding khusus
+            if (type === 'keputusan') {
+                cellClass = 'bg-gray-50'; // Background netral untuk matriks keputusan
+            }
+            
+            bodyHtml += `<td class="border border-gray-300 px-3 py-2 text-center ${cellClass}">
+                ${formattedValue}
+            </td>`;
+        });
+        
+        // Tambahkan total untuk matriks terbobot
+        if (type === 'terbobot') {
+            const total = Object.values(nilai).reduce((sum, val) => sum + parseFloat(val), 0);
+            bodyHtml += `<td class="border border-gray-300 px-3 py-2 text-center font-bold bg-blue-200">
+                ${total.toFixed(4)}
+            </td>`;
+        }
+        
+        bodyHtml += '</tr>';
+    });
+
+    // Add total column header for terbobot
+    if (type === 'terbobot') {
+        const headerRow = document.querySelector(`#matriks${type.charAt(0).toUpperCase() + type.slice(1)} table thead tr`);
+        if (headerRow) {
+            headerRow.innerHTML += '<th class="border border-gray-300 px-3 py-2 font-medium bg-blue-200">Total Skor</th>';
+        }
+    }
+    
+    document.getElementById(`body${type.charAt(0).toUpperCase() + type.slice(1)}`).innerHTML = bodyHtml;
+}
+
+// Build ranking
+function buildRanking() {
+    let rankingHtml = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">';
+    
+    detailData.forEach((item, index) => {
+        const medalIcon = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`;
+        const skorFormatted = formatCleanNumber(item.skor_total, 'terbobot');
+        rankingHtml += `
+            <div class="flex items-center justify-between p-2 bg-white rounded border">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg">${medalIcon}</span>
+                    <span class="font-medium">${item.nama}</span>
+                </div>
+                <span class="font-bold text-blue-600">${skorFormatted}</span>
+            </div>
+        `;
+    });
+    
+    rankingHtml += '</div>';
+    document.getElementById('rankingAkhir').innerHTML = rankingHtml;
+}
+
+// Show matriks tab
+function showMatriks(type) {
+    // Hide all matriks content
+    document.querySelectorAll('.matriks-content').forEach(el => el.classList.add('hidden'));
+    
+    // Remove active class from all tabs
+    document.querySelectorAll('[id^="tab"]').forEach(tab => {
+        tab.classList.remove('border-blue-500', 'text-blue-600');
+        tab.classList.add('text-gray-500');
+    });
+    
+    // Show selected matriks
+    document.getElementById(`matriks${type.charAt(0).toUpperCase() + type.slice(1)}`).classList.remove('hidden');
+    
+    // Add active class to selected tab
+    const activeTab = document.getElementById(`tab${type.charAt(0).toUpperCase() + type.slice(1)}`);
+    activeTab.classList.add('border-blue-500', 'text-blue-600');
+    activeTab.classList.remove('text-gray-500');
+}
+
+function showDetailModal(index) {
+    const item = detailData[index];
+    if (!item) return;
+
+    const skorTotalFormatted = formatCleanNumber(item.skor_total, 'terbobot');
+    let content = `
+        <h2 class="text-xl font-bold mb-4 text-gray-800">${item.nama}</h2>
+        <div class="mb-4">
+            <h3 class="text-lg font-semibold text-blue-600 mb-2">Skor Total SAW: ${skorTotalFormatted}</h3>
+        </div>
+    `;
+
+    if (item.detail_kriteria) {
+        content += `
+            <div class="space-y-4">
+                <h4 class="font-semibold text-gray-700 border-b pb-2">Detail Perhitungan SAW per Kriteria:</h4>
+        `;
+
+        Object.entries(item.detail_kriteria).forEach(([kriteria, detail]) => {
+            const statusColor = detail.skor_kriteria >= 0.2 ? 'text-green-600' : 
+                               detail.skor_kriteria >= 0.1 ? 'text-yellow-600' : 'text-red-600';
+            
+            // NILAI ASLI dari kuesioner (untuk ditampilkan)
+            const nilaiAsliFormatted = formatCleanNumber(detail.nilai_alternatif, 'keputusan');
+            
+            // NILAI PERHITUNGAN (jika ada modifikasi similarity boost)
+            const nilaiPerhitunganFormatted = detail.nilai_perhitungan ? 
+                formatCleanNumber(detail.nilai_perhitungan, 'normalisasi') : nilaiAsliFormatted;
+            
+            const bobotFormatted = formatCleanNumber(detail.bobot);
+            const maxNilaiFormatted = formatCleanNumber(detail.max_nilai);
+            const minNilaiFormatted = formatCleanNumber(detail.min_nilai);
+            const normalisasiFormatted = formatCleanNumber(detail.normalisasi, 'normalisasi');
+            const skorKriteriaFormatted = formatCleanNumber(detail.skor_kriteria, 'terbobot');
+            
+            content += `
+                <div class="bg-gray-50 p-3 rounded border-l-4 border-blue-400">
+                    <h5 class="font-medium text-gray-800 mb-3">${kriteria}</h5>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        <div class="space-y-2">
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Nilai Asli:</span>
+                                <span class="font-medium">${nilaiAsliFormatted}</span>
+                            </div>
+                            ${detail.nilai_perhitungan ? `
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Nilai Perhitungan:</span>
+                                <span class="font-medium text-orange-600">${nilaiPerhitunganFormatted}</span>
+                            </div>
+                            ` : ''}
                             <div class="flex justify-between">
                                 <span class="text-gray-600">Bobot:</span>
-                                <span class="font-medium text-blue-600">${kriteria.bobot}</span>
+                                <span class="font-medium text-blue-600">${bobotFormatted}</span>
                             </div>
                             <div class="flex justify-between">
-                                <span class="text-gray-600">Jenis:</span>
-                                <span class="font-medium ${jenisColor}">${kriteria.jenis}</span>
+                                <span class="text-gray-600">Range:</span>
+                                <span class="font-medium">${maxNilaiFormatted} - ${minNilaiFormatted}</span>
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Normalisasi:</span>
+                                <span class="font-medium text-purple-600">${normalisasiFormatted}</span>
                             </div>
                             <div class="flex justify-between">
-                                <span class="text-gray-600">Max:</span>
-                                <span class="font-medium">${kriteria.max_nilai}</span>
+                                <span class="text-gray-600">Skor Akhir:</span>
+                                <span class="font-bold ${statusColor}">${skorKriteriaFormatted}</span>
                             </div>
-                            <div class="flex justify-between">
-                                <span class="text-gray-600">Min:</span>
-                                <span class="font-medium">${kriteria.min_nilai}</span>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-            document.getElementById('infoKriteria').innerHTML = infoHtml;
-
-            // Build matriks tables
-            buildMatriksTable('keputusan', matriksKeputusan);
-            buildMatriksTable('normalisasi', matriksNormalisasi);
-            buildMatriksTable('terbobot', matriksTerbobot);
-            
-            // Build ranking
-            buildRanking();
-        }
-
-        // Build matriks table
-        function buildMatriksTable(type, data) {
-            if (Object.keys(data).length === 0) return;
-
-            const kriteriaNames = Object.keys(infoKriteria);
-            
-            // Build header
-            let headerHtml = '<th class="border border-gray-300 px-3 py-2 font-medium">Alternatif</th>';
-            kriteriaNames.forEach(kriteria => {
-                const jenisIcon = infoKriteria[kriteria].jenis.toLowerCase() === 'cost' ? '📉' : '📈';
-                headerHtml += `<th class="border border-gray-300 px-3 py-2 font-medium text-center">
-                    ${kriteria} ${jenisIcon}<br>
-                    <span class="text-xs font-normal">(${infoKriteria[kriteria].bobot})</span>
-                </th>`;
-            });
-            
-            // Find the table header (first occurrence in each table)
-            const tables = document.querySelectorAll(`#matriks${type.charAt(0).toUpperCase() + type.slice(1)} table thead tr`);
-            if (tables.length > 0) {
-                tables[0].innerHTML = headerHtml;
-            }
-
-            // Build body
-            let bodyHtml = '';
-            Object.entries(data).forEach(([alternatif, nilai]) => {
-                bodyHtml += `<tr class="hover:bg-gray-50">
-                    <td class="border border-gray-300 px-3 py-2 font-medium">${alternatif}</td>`;
-                
-                kriteriaNames.forEach(kriteria => {
-                    const cellValue = nilai[kriteria] || 0;
-                    let cellClass = '';
-                    
-                    if (type === 'normalisasi' || type === 'terbobot') {
-                        // Color coding untuk nilai normalisasi dan terbobot
-                        if (cellValue >= 0.8) cellClass = 'bg-green-100 text-green-800';
-                        else if (cellValue >= 0.6) cellClass = 'bg-blue-100 text-blue-800';
-                        else if (cellValue >= 0.4) cellClass = 'bg-yellow-100 text-yellow-800';
-                        else cellClass = 'bg-red-100 text-red-800';
-                    }
-                    
-                    bodyHtml += `<td class="border border-gray-300 px-3 py-2 text-center ${cellClass}">
-                        ${type === 'keputusan' ? cellValue : parseFloat(cellValue).toFixed(4)}
-                    </td>`;
-                });
-                
-                // Tambahkan total untuk matriks terbobot
-                if (type === 'terbobot') {
-                    const total = Object.values(nilai).reduce((sum, val) => sum + parseFloat(val), 0);
-                    bodyHtml += `<td class="border border-gray-300 px-3 py-2 text-center font-bold bg-blue-200">
-                        ${total.toFixed(4)}
-                    </td>`;
-                }
-                
-                bodyHtml += '</tr>';
-            });
-
-            // Add total column header for terbobot
-            if (type === 'terbobot') {
-                const headerRow = document.querySelector(`#matriks${type.charAt(0).toUpperCase() + type.slice(1)} table thead tr`);
-                if (headerRow) {
-                    headerRow.innerHTML += '<th class="border border-gray-300 px-3 py-2 font-medium bg-blue-200">Total Skor</th>';
-                }
-            }
-            
-            document.getElementById(`body${type.charAt(0).toUpperCase() + type.slice(1)}`).innerHTML = bodyHtml;
-        }
-
-        // Build ranking
-        function buildRanking() {
-            let rankingHtml = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">';
-            
-            detailData.forEach((item, index) => {
-                const medalIcon = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`;
-                rankingHtml += `
-                    <div class="flex items-center justify-between p-2 bg-white rounded border">
-                        <div class="flex items-center gap-2">
-                            <span class="text-lg">${medalIcon}</span>
-                            <span class="font-medium">${item.nama}</span>
-                        </div>
-                        <span class="font-bold text-blue-600">${parseFloat(item.skor_total).toFixed(4)}</span>
-                    </div>
-                `;
-            });
-            
-            rankingHtml += '</div>';
-            document.getElementById('rankingAkhir').innerHTML = rankingHtml;
-        }
-
-        // Show matriks tab
-        function showMatriks(type) {
-            // Hide all matriks content
-            document.querySelectorAll('.matriks-content').forEach(el => el.classList.add('hidden'));
-            
-            // Remove active class from all tabs
-            document.querySelectorAll('[id^="tab"]').forEach(tab => {
-                tab.classList.remove('border-blue-500', 'text-blue-600');
-                tab.classList.add('text-gray-500');
-            });
-            
-            // Show selected matriks
-            document.getElementById(`matriks${type.charAt(0).toUpperCase() + type.slice(1)}`).classList.remove('hidden');
-            
-            // Add active class to selected tab
-            const activeTab = document.getElementById(`tab${type.charAt(0).toUpperCase() + type.slice(1)}`);
-            activeTab.classList.add('border-blue-500', 'text-blue-600');
-            activeTab.classList.remove('text-gray-500');
-        }
-
-        function showDetailModal(index) {
-            const item = detailData[index];
-            if (!item) return;
-
-            let content = `
-                <h2 class="text-xl font-bold mb-4 text-gray-800">${item.nama}</h2>
-                <div class="mb-4">
-                    <h3 class="text-lg font-semibold text-blue-600 mb-2">Skor Total SAW: ${parseFloat(item.skor_total).toFixed(4)}</h3>
-                </div>
-            `;
-
-            if (item.detail_kriteria) {
-                content += `
-                    <div class="space-y-4">
-                        <h4 class="font-semibold text-gray-700 border-b pb-2">Detail Perhitungan SAW per Kriteria:</h4>
-                `;
-
-                Object.entries(item.detail_kriteria).forEach(([kriteria, detail]) => {
-                    const statusColor = detail.skor_kriteria >= 0.2 ? 'text-green-600' : 
-                                       detail.skor_kriteria >= 0.1 ? 'text-yellow-600' : 'text-red-600';
-                    
-                    content += `
-                        <div class="bg-gray-50 p-3 rounded border-l-4 border-blue-400">
-                            <h5 class="font-medium text-gray-800 mb-3">${kriteria}</h5>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                                <div class="space-y-2">
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-600">Nilai Kriteria:</span>
-                                        <span class="font-medium">${detail.nama_subkriteria}</span>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-600">Nilai Subkriteria:</span>
-                                        <span class="font-medium">${detail.nilai_alternatif}</span>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-600">Jenis Kriteria:</span>
-                                        <span class="font-medium capitalize badge ${detail.jenis.toLowerCase() === 'cost' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'} px-2 py-1 rounded text-xs">${detail.jenis}</span>
-                                    </div>
-                                </div>
-                                <div class="space-y-2">
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-600">Bobot:</span>
-                                        <span class="font-medium">${detail.bobot}</span>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-600">Max Nilai Kriteria:</span>
-                                        <span class="font-medium">${detail.max_nilai}</span>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-600">Min Nilai Kriteria:</span>
-                                        <span class="font-medium">${detail.min_nilai}</span>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-600">Normalisasi:</span>
-                                        <span class="font-medium">${parseFloat(detail.normalisasi).toFixed(4)}</span>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-600">Skor Kriteria:</span>
-                                        <span class="font-bold ${statusColor}">${detail.skor_kriteria}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="mt-3 p-2 bg-blue-50 rounded text-xs">
-                                <strong>Rumus Normalisasi SAW untuk "${kriteria}":</strong><br>
-                                ${detail.jenis.toLowerCase() === 'cost' ? 
-                                    `<strong>Cost:</strong> Min(${detail.min_nilai}) ÷ Nilai alternatif ini (${detail.nilai_alternatif}) = ${parseFloat(detail.normalisasi).toFixed(4)}` :
-                                    `<strong>Benefit:</strong> Nilai alternatif ini (${detail.nilai_alternatif}) ÷ Max(${detail.max_nilai}) = ${parseFloat(detail.normalisasi).toFixed(4)}`
-                                }<br>
-                                <strong>Skor Kriteria:</strong> Normalisasi (${parseFloat(detail.normalisasi).toFixed(4)}) × Bobot (${detail.bobot}) = ${detail.skor_kriteria}
+                            <div class="text-xs text-gray-500 mt-2">
+                                Formula: (${detail.nilai_perhitungan ? nilaiPerhitunganFormatted : nilaiAsliFormatted} ÷ ${maxNilaiFormatted}) × ${bobotFormatted}
                             </div>
                         </div>
-                    `;
-                });
-
-                content += `</div>`;
-            }
-
-            // Tambahan informasi ranking
-            content += `
-                <div class="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-l-4 border-blue-400">
-                    <h4 class="font-semibold text-gray-800 mb-2">Informasi Ranking:</h4>
-                    <div class="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                            <span class="text-gray-600">Peringkat:</span>
-                            <span class="font-bold text-blue-600">#${index + 1}</span>
-                        </div>
-                        <div>
-                            <span class="text-gray-600">Total Skor SAW:</span>
-                            <span class="font-bold text-green-600">${parseFloat(item.skor_total).toFixed(4)}</span>
-                        </div>
-                    </div>
-                    <div class="mt-3 text-xs text-gray-600">
-                        <strong>Catatan:</strong> Skor SAW dihitung dengan menjumlahkan semua skor kriteria yang telah dinormalisasi dan dikalikan dengan bobot masing-masing.
                     </div>
                 </div>
             `;
+        });
 
-            document.getElementById('modalContent').innerHTML = content;
-            document.getElementById('detailModal').style.display = 'block';
-        }
+        content += '</div>';
+    }
 
-        function closeModal() {
-            document.getElementById('detailModal').style.display = 'none';
-        }
+    // Add comparison section if available
+    if (item.perbandingan_dengan_ideal) {
+        content += `
+            <div class="mt-6 pt-4 border-t">
+                <h4 class="font-semibold text-gray-700 mb-3">Perbandingan dengan Solusi Ideal:</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-green-50 p-3 rounded border">
+                        <h5 class="font-medium text-green-800 mb-2">Kekuatan</h5>
+                        <ul class="text-sm text-green-700 space-y-1">
+                            ${item.perbandingan_dengan_ideal.kekuatan.map(k => `<li>• ${k}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="bg-red-50 p-3 rounded border">
+                        <h5 class="font-medium text-red-800 mb-2">Area Perbaikan</h5>
+                        <ul class="text-sm text-red-700 space-y-1">
+                            ${item.perbandingan_dengan_ideal.kelemahan.map(k => `<li>• ${k}</li>`).join('')}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
 
-        // Close modal when clicking outside of it
-        window.onclick = function(event) {
-            const modal = document.getElementById('detailModal');
-            if (event.target == modal) {
-                modal.style.display = 'none';
-            }
-        }
+    // Show modal
+    document.getElementById('modalContent').innerHTML = content;
+    document.getElementById('detailModal').classList.remove('hidden');
+}
 
-        // Close modal with Escape key
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape') {
+// Close modal
+function closeModal() {
+    document.getElementById('detailModal').classList.add('hidden');
+}
+
+// Event listener untuk close modal ketika click di luar
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('detailModal');
+    if (modal) {
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
                 closeModal();
             }
         });
-
-        // Initialize tooltips and other interactive elements
-        document.addEventListener('DOMContentLoaded', function() {
-            // Add smooth scrolling for anchor links
-            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-                anchor.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    const target = document.querySelector(this.getAttribute('href'));
-                    if (target) {
-                        target.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'start'
-                        });
-                    }
-                });
-            });
-
-            // Add loading animation for images
-            document.querySelectorAll('img').forEach(img => {
-                img.addEventListener('load', function() {
-                    this.style.opacity = '1';
-                });
-                img.style.opacity = '0';
-                img.style.transition = 'opacity 0.3s ease';
-            });
-
-            // Add hover effects for cards
-            document.querySelectorAll('.card-hover').forEach(card => {
-                card.addEventListener('mouseenter', function() {
-                    this.style.transform = 'translateY(-5px)';
-                });
-                card.addEventListener('mouseleave', function() {
-                    this.style.transform = 'translateY(0)';
-                });
-            });
-        });
-
-        // Function to format numbers with thousand separators
-        function formatNumber(num) {
-            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
+    
+    // Initialize matriks jika sudah ada data
+    if (Object.keys(matriksKeputusan).length > 0) {
+        const matriksSection = document.getElementById('matriksSection');
+        if (matriksSection && !matriksSection.classList.contains('hidden')) {
+            initializeMatriks();
         }
+    }
+});
 
-        // Function to get performance color based on score
-        function getPerformanceColor(score, maxScore) {
-            const percentage = (score / maxScore) * 100;
-            if (percentage >= 80) return 'text-green-600';
-            if (percentage >= 60) return 'text-blue-600';
-            if (percentage >= 40) return 'text-yellow-600';
-            return 'text-red-600';
-        }
+// Function untuk export data (bonus feature)
+function exportMatriksData() {
+    const dataToExport = {
+        info_kriteria: infoKriteria,
+        matriks_keputusan: matriksKeputusan,
+        matriks_normalisasi: matriksNormalisasi,
+        matriks_terbobot: matriksTerbobot,
+        ranking: detailData.map((item, index) => ({
+            rank: index + 1,
+            nama: item.nama,
+            skor_total: item.skor_total
+        }))
+    };
+    
+    const dataStr = JSON.stringify(dataToExport, null, 2);
+    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `saw_analysis_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+}
 
-        // Function to animate progress bars
-        function animateProgressBars() {
-            document.querySelectorAll('.progress-bar').forEach(bar => {
-                const width = bar.style.width;
-                bar.style.width = '0%';
-                setTimeout(() => {
-                    bar.style.width = width;
-                    bar.style.transition = 'width 1s ease-in-out';
-                }, 100);
-            });
-        }
-
-        // Call animation when page loads
-        window.addEventListener('load', animateProgressBars);
-
-        // Print functionality
-        function printResults() {
-            window.print();
-        }
-
-        // Export functionality (basic CSV export for ranking)
-        function exportToCSV() {
-            let csv = 'Ranking,Nama,Skor Total\n';
-            detailData.forEach((item, index) => {
-                csv += `${index + 1},"${item.nama}",${item.skor_total}\n`;
-            });
-            
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.setAttribute('hidden', '');
-            a.setAttribute('href', url);
-            a.setAttribute('download', 'rekomendasi_pakaian.csv');
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-        }
-
-        // Add keyboard shortcuts
-        document.addEventListener('keydown', function(event) {
-            // Ctrl/Cmd + P for print
-            if ((event.ctrlKey || event.metaKey) && event.key === 'p') {
-                event.preventDefault();
-                printResults();
-            }
-            
-            // Ctrl/Cmd + E for export
-            if ((event.ctrlKey || event.metaKey) && event.key === 'e') {
-                event.preventDefault();
-                exportToCSV();
-            }
-            
-            // M key to toggle matrix
-            if (event.key === 'm' || event.key === 'M') {
-                if (!document.querySelector('input:focus') && !document.querySelector('textarea:focus')) {
-                    toggleMatriks();
-                }
-            }
-        });
-
-        // Add touch gestures for mobile
-        let touchStartY = 0;
-        let touchEndY = 0;
-
-        document.addEventListener('touchstart', function(event) {
-            touchStartY = event.changedTouches[0].screenY;
-        });
-
-        document.addEventListener('touchend', function(event) {
-            touchEndY = event.changedTouches[0].screenY;
-            handleSwipe();
-        });
-
-        function handleSwipe() {
-            const swipeThreshold = 50;
-            const diff = touchStartY - touchEndY;
-            
-            if (Math.abs(diff) > swipeThreshold) {
-                if (diff > 0) {
-                    // Swipe up - scroll to top
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                } else {
-                    // Swipe down - scroll to bottom
-                    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-                }
-            }
-        }
-
-        // Performance monitoring
-        const performanceObserver = new PerformanceObserver((list) => {
-            for (const entry of list.getEntries()) {
-                console.log(`${entry.name}: ${entry.duration}ms`);
-            }
-        });
-
-        if ('PerformanceObserver' in window) {
-            performanceObserver.observe({ entryTypes: ['measure', 'navigation'] });
-        }
-
-        // Lazy loading for images
-        if ('IntersectionObserver' in window) {
-            const imageObserver = new IntersectionObserver((entries, observer) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        const img = entry.target;
-                        img.src = img.dataset.src;
-                        img.classList.remove('lazy');
-                        imageObserver.unobserve(img);
-                    }
-                });
-            });
-
-            document.querySelectorAll('img[data-src]').forEach(img => {
-                imageObserver.observe(img);
-            });
-        }
+// Helper function untuk print matriks
+function printMatriks() {
+    const printWindow = window.open('', '_blank');
+    const matriksContent = document.getElementById('matriksSection').innerHTML;
+    
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>SAW Analysis Report</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+                th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+                th { background-color: #f2f2f2; font-weight: bold; }
+                .bg-green-100 { background-color: #dcfce7; }
+                .bg-blue-100 { background-color: #dbeafe; }
+                .bg-yellow-100 { background-color: #fef3c7; }
+                .bg-red-100 { background-color: #fee2e2; }
+                .bg-gray-50 { background-color: #f9fafb; }
+                .bg-blue-200 { background-color: #bfdbfe; }
+                h2, h3 { color: #1f2937; margin-top: 30px; }
+                .no-print { display: none; }
+            </style>
+        </head>
+        <body>
+            <h1>Laporan Analisis SAW (Simple Additive Weighting)</h1>
+            <p>Tanggal: ${new Date().toLocaleDateString('id-ID')}</p>
+            ${matriksContent}
+        </body>
+        </html>
+    `);
+    
+    printWindow.document.close();
+    printWindow.print();
+}
     </script>
     
     <!-- Add some custom styles for better mobile experience -->
